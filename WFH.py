@@ -9,7 +9,7 @@ from pathlib import Path
 import hashlib
 
 # Page configuration
-st.set_page_config(page_title="WFH Team Scheduler", layout="wide", page_icon="🏠")
+st.set_page_config(page_title="Business Analytics Team Scheduler", layout="wide", page_icon="📊")
 
 # Data file paths
 DATA_DIR = Path("wfh_data")
@@ -17,6 +17,7 @@ DATA_DIR.mkdir(exist_ok=True)
 EMPLOYEES_FILE = DATA_DIR / "employees.json"
 WFH_RECORDS_FILE = DATA_DIR / "wfh_records.csv"
 ANNUAL_LEAVE_RECORDS_FILE = DATA_DIR / "annual_leave_records.csv"
+SEMINAR_RECORDS_FILE = DATA_DIR / "seminar_records.csv"
 
 # Initialize data files
 def init_data_files():
@@ -31,6 +32,10 @@ def init_data_files():
     if not ANNUAL_LEAVE_RECORDS_FILE.exists():
         df = pd.DataFrame(columns=['employee_name', 'date', 'status'])
         df.to_csv(ANNUAL_LEAVE_RECORDS_FILE, index=False)
+
+    if not SEMINAR_RECORDS_FILE.exists():
+        df = pd.DataFrame(columns=['employee_name', 'date', 'status', 'seminar_name'])
+        df.to_csv(SEMINAR_RECORDS_FILE, index=False)
 
 # Hash password
 def hash_password(password):
@@ -149,6 +154,90 @@ def get_annual_leave_counts():
 
     return counts
 
+# Load Seminar records
+def load_seminar_records():
+    df = pd.read_csv(SEMINAR_RECORDS_FILE)
+    if not df.empty:
+        df['date'] = pd.to_datetime(df['date'])
+    return df
+
+# Save Seminar records
+def save_seminar_records(df):
+    df.to_csv(SEMINAR_RECORDS_FILE, index=False)
+
+# Add Seminar record
+def add_seminar_record(employee, date, seminar_name, status='Seminar'):
+    df = load_seminar_records()
+
+    # Remove existing record for same employee and date
+    df = df[~((df['employee_name'] == employee) & (df['date'] == pd.to_datetime(date)))]
+
+    # Add new record
+    new_record = pd.DataFrame({
+        'employee_name': [employee],
+        'date': [pd.to_datetime(date)],
+        'status': [status],
+        'seminar_name': [seminar_name]
+    })
+    df = pd.concat([df, new_record], ignore_index=True)
+    save_seminar_records(df)
+
+# Remove Seminar record
+def remove_seminar_record(employee, date):
+    df = load_seminar_records()
+    df = df[~((df['employee_name'] == employee) & (df['date'] == pd.to_datetime(date)))]
+    save_seminar_records(df)
+
+# Get Seminar count per employee
+def get_seminar_counts():
+    df = load_seminar_records()
+    employees = load_employees()
+    employee_names = [emp['name'] for emp in employees]
+
+    if df.empty:
+        return pd.DataFrame({'employee_name': employee_names, 'seminar_days': [0] * len(employee_names)})
+
+    counts = df.groupby('employee_name').size().reset_index(name='seminar_days')
+
+    # Add employees with 0 Seminar days
+    all_employees = pd.DataFrame({'employee_name': employee_names})
+    counts = all_employees.merge(counts, on='employee_name', how='left').fillna(0)
+    counts['seminar_days'] = counts['seminar_days'].astype(int)
+
+    return counts
+
+# Check if employee has existing entry for a specific date
+def check_existing_entry(employee, date):
+    """
+    Check if an employee already has an entry (WFH, Annual Leave, or Seminar) for a given date.
+    Returns: tuple (has_entry: bool, entry_type: str or None, details: str or None)
+    """
+    date_pd = pd.to_datetime(date)
+
+    # Check WFH records
+    df_wfh = load_wfh_records()
+    if not df_wfh.empty:
+        wfh_match = df_wfh[(df_wfh['employee_name'] == employee) & (df_wfh['date'] == date_pd)]
+        if not wfh_match.empty:
+            return (True, 'WFH', 'Work From Home')
+
+    # Check Annual Leave records
+    df_al = load_annual_leave_records()
+    if not df_al.empty:
+        al_match = df_al[(df_al['employee_name'] == employee) & (df_al['date'] == date_pd)]
+        if not al_match.empty:
+            return (True, 'Annual Leave', 'Annual Leave')
+
+    # Check Seminar records
+    df_seminar = load_seminar_records()
+    if not df_seminar.empty:
+        seminar_match = df_seminar[(df_seminar['employee_name'] == employee) & (df_seminar['date'] == date_pd)]
+        if not seminar_match.empty:
+            seminar_name = seminar_match.iloc[0]['seminar_name']
+            return (True, 'Seminar', f'Seminar: {seminar_name}')
+
+    return (False, None, None)
+
 # Get WFH count per employee
 def get_wfh_counts():
     df = load_wfh_records()
@@ -171,6 +260,7 @@ def get_wfh_counts():
 def get_office_occupancy(start_date, end_date):
     df_wfh = load_wfh_records()
     df_al = load_annual_leave_records()
+    df_seminar = load_seminar_records()
     employees = load_employees()
     total_employees = len(employees)
 
@@ -184,30 +274,47 @@ def get_office_occupancy(start_date, end_date):
     if not df_al.empty:
         df_al = df_al[(df_al['date'] >= pd.to_datetime(start_date)) & (df_al['date'] <= pd.to_datetime(end_date))]
 
+    if not df_seminar.empty:
+        df_seminar = df_seminar[(df_seminar['date'] >= pd.to_datetime(start_date)) & (df_seminar['date'] <= pd.to_datetime(end_date))]
+
     # Count WFH per day
     daily_wfh = df_wfh.groupby('date').size().reset_index(name='wfh_count') if not df_wfh.empty else pd.DataFrame(columns=['date', 'wfh_count'])
 
     # Count Annual Leave per day
     daily_al = df_al.groupby('date').size().reset_index(name='al_count') if not df_al.empty else pd.DataFrame(columns=['date', 'al_count'])
 
-    # Merge WFH and AL counts
-    if not daily_wfh.empty and not daily_al.empty:
-        daily_combined = pd.merge(daily_wfh, daily_al, on='date', how='outer').fillna(0)
-    elif not daily_wfh.empty:
-        daily_combined = daily_wfh.copy()
-        daily_combined['al_count'] = 0
-    elif not daily_al.empty:
-        daily_combined = daily_al.copy()
-        daily_combined['wfh_count'] = 0
-    else:
+    # Count Seminar per day
+    daily_seminar = df_seminar.groupby('date').size().reset_index(name='seminar_count') if not df_seminar.empty else pd.DataFrame(columns=['date', 'seminar_count'])
+
+    # Merge all counts
+    all_dfs = [daily_wfh, daily_al, daily_seminar]
+    non_empty_dfs = [df for df in all_dfs if not df.empty]
+
+    if not non_empty_dfs:
         return pd.DataFrame()
+
+    daily_combined = non_empty_dfs[0]
+    for df in non_empty_dfs[1:]:
+        daily_combined = pd.merge(daily_combined, df, on='date', how='outer')
+
+    daily_combined = daily_combined.fillna(0)
+
+    # Ensure all columns exist
+    if 'wfh_count' not in daily_combined.columns:
+        daily_combined['wfh_count'] = 0
+    if 'al_count' not in daily_combined.columns:
+        daily_combined['al_count'] = 0
+    if 'seminar_count' not in daily_combined.columns:
+        daily_combined['seminar_count'] = 0
 
     daily_combined['wfh_count'] = daily_combined['wfh_count'].astype(int)
     daily_combined['al_count'] = daily_combined['al_count'].astype(int)
-    daily_combined['out_of_office'] = daily_combined['wfh_count'] + daily_combined['al_count']
+    daily_combined['seminar_count'] = daily_combined['seminar_count'].astype(int)
+    daily_combined['out_of_office'] = daily_combined['wfh_count'] + daily_combined['al_count'] + daily_combined['seminar_count']
     daily_combined['in_office'] = total_employees - daily_combined['out_of_office']
     daily_combined['wfh_percentage'] = (daily_combined['wfh_count'] / total_employees * 100).round(1)
     daily_combined['al_percentage'] = (daily_combined['al_count'] / total_employees * 100).round(1)
+    daily_combined['seminar_percentage'] = (daily_combined['seminar_count'] / total_employees * 100).round(1)
 
     return daily_combined
 
@@ -262,9 +369,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # User is logged in - show the application
-# Title
-st.title("📊 Business Analytics Team Scheduler")
-st.markdown("---")
+# Title will be set dynamically based on the page
 
 # Sidebar
 with st.sidebar:
@@ -289,7 +394,7 @@ with st.sidebar:
 
     # Show different menus based on role
     if st.session_state.user_role == "Admin":
-        page = st.radio("Menu", ["Dashboard", "Schedule WFH", "Schedule Annual Leave", "Manage Employees", "Reports"])
+        page = st.radio("Menu", ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees"])
     else:
         # Users only see Dashboard
         page = st.radio("Menu", ["Dashboard"])
@@ -356,29 +461,65 @@ if st.session_state.show_change_password:
 
 # DASHBOARD PAGE
 if page == "Dashboard":
-    st.header("📊 Dashboard")
+    st.title("📊 Business Analytics Team Scheduler - Dashboard")
+    st.markdown("---")
 
     if not employees:
         st.warning("⚠️ No employees added yet. Go to 'Manage Employees' to add team members.")
     else:
         today = datetime.now().date()
 
-        # WFH & AL Schedule - Calendar View
-        st.subheader("📅 WFH & AL Schedule (Current Week + 4 Weeks)")
+        # Initialize calendar month offset in session state
+        if 'calendar_month_offset' not in st.session_state:
+            st.session_state.calendar_month_offset = 0
 
-        # Load both WFH and Annual Leave records
+        # WFH, AL & Seminar Schedule - Calendar View
+        col_title, col_nav = st.columns([3, 1])
+        with col_title:
+            st.subheader("📅 WFH, AL & Seminar Schedule")
+        with col_nav:
+            col_left, col_center, col_right = st.columns([1, 2, 1])
+            with col_left:
+                if st.button("◀", key="cal_prev", help="Previous month"):
+                    st.session_state.calendar_month_offset -= 1
+                    st.rerun()
+            with col_center:
+                # Calculate the viewing month based on offset
+                viewing_date = today + timedelta(days=30 * st.session_state.calendar_month_offset)
+                st.markdown(f"**{viewing_date.strftime('%B %Y')}**")
+            with col_right:
+                if st.button("▶", key="cal_next", help="Next month"):
+                    st.session_state.calendar_month_offset += 1
+                    st.rerun()
+
+        # Load WFH, Annual Leave, and Seminar records
         df_al_records = load_annual_leave_records()
+        df_seminar_records = load_seminar_records()
 
-        if not df_records.empty or not df_al_records.empty:
-            # Get data from start of current week to 5 weeks ahead
-            start_of_week = today - timedelta(days=today.weekday())  # Start from Monday of current week
-            calendar_end = start_of_week + timedelta(days=35)  # 5 weeks from start of week
+        if not df_records.empty or not df_al_records.empty or not df_seminar_records.empty:
+            # Calculate the start of the viewing month
+            viewing_date = today + timedelta(days=30 * st.session_state.calendar_month_offset)
+            start_of_month = viewing_date.replace(day=1)
+
+            # Calculate first Monday to show (may be in previous month)
+            start_of_week = start_of_month - timedelta(days=start_of_month.weekday())
+
+            # Show 5 weeks
+            calendar_end = start_of_week + timedelta(days=35)
 
             # Group WFH employees by date
             wfh_by_date = df_records.groupby('date')['employee_name'].apply(list).to_dict()
 
             # Group Annual Leave employees by date
             al_by_date = df_al_records.groupby('date')['employee_name'].apply(list).to_dict() if not df_al_records.empty else {}
+
+            # Group Seminar employees by date (with seminar names)
+            if not df_seminar_records.empty:
+                seminar_by_date = df_seminar_records.groupby('date').apply(
+                    lambda x: list(zip(x['employee_name'], x['seminar_name']))
+                ).to_dict()
+            else:
+                seminar_by_date = {}
 
             # Create HTML calendar
             calendar_html = """
@@ -444,6 +585,24 @@ if page == "Dashboard":
                 border-radius: 3px;
                 display: block;
             }
+            .seminar-employee {
+                font-size: 11px;
+                background-color: #2196F3;
+                color: white;
+                padding: 2px 4px;
+                margin: 2px 0;
+                border-radius: 3px;
+                display: block;
+            }
+            .seminar-employee-past {
+                font-size: 11px;
+                background-color: #1565C0;
+                color: white;
+                padding: 2px 4px;
+                margin: 2px 0;
+                border-radius: 3px;
+                display: block;
+            }
             .day-header {
                 background-color: #333;
                 color: white;
@@ -493,13 +652,19 @@ if page == "Dashboard":
                         for emp in al_by_date[date_key]:
                             calendar_html += f'<span class="{al_class}">AL: {emp}</span>'
 
+                    # Add Seminar employees for this date
+                    if date_key in seminar_by_date:
+                        seminar_class = "seminar-employee-past" if is_past else "seminar-employee"
+                        for emp, seminar_name in seminar_by_date[date_key]:
+                            calendar_html += f'<span class="{seminar_class}">S: {emp}</span>'
+
                     calendar_html += '</div>'
 
             calendar_html += '</div>'
 
             st.markdown(calendar_html, unsafe_allow_html=True)
         else:
-            st.info("No WFH or Annual Leave days scheduled")
+            st.info("No WFH, Annual Leave, or Seminar days scheduled")
 
         # Charts section
         st.markdown("---")
@@ -545,9 +710,19 @@ if page == "Dashboard":
                 fill='tonexty',
                 stackgroup='one'
             ))
+            fig.add_trace(go.Scatter(
+                x=occupancy['date'],
+                y=occupancy['seminar_count'],
+                mode='lines',
+                name='Seminar',
+                line=dict(color='blue', width=0),
+                fillcolor='rgba(33, 150, 243, 0.5)',
+                fill='tonexty',
+                stackgroup='one'
+            ))
 
             fig.update_layout(
-                title='Daily Office vs WFH vs Annual Leave',
+                title='Daily Office vs WFH vs Annual Leave vs Seminar',
                 xaxis_title='Date',
                 yaxis_title='Number of Employees',
                 hovermode='x unified'
@@ -559,11 +734,12 @@ if page == "Dashboard":
             if not low_occupancy.empty:
                 st.warning(f"⚠️ **Low office occupancy alert:** {len(low_occupancy)} day(s) with less than 30% in office")
         else:
-            st.info("No WFH or Annual Leave days scheduled in the next 30 days")
+            st.info("No WFH, Annual Leave, or Seminar days scheduled in the next 30 days")
 
 # SCHEDULE WFH PAGE
 elif page == "Schedule WFH":
-    st.header("📅 Schedule Work From Home")
+    st.title("📊 Business Analytics Team Scheduler - Schedule WFH")
+    st.markdown("---")
     
     if not employees:
         st.warning("⚠️ No employees added yet. Go to 'Manage Employees' to add team members.")
@@ -571,36 +747,70 @@ elif page == "Schedule WFH":
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.subheader("Add WFH Day")
+            st.subheader("Add WFH Day(s)")
 
             employee_options = [f"{emp['name']} (ID: {emp['id']})" for emp in employees]
             selected_employee_display = st.selectbox("Select Employee", employee_options)
             # Extract employee name from display string
             selected_employee = selected_employee_display.split(" (ID:")[0]
-            selected_date = st.date_input("Select Date", value=datetime.now().date())
-            
-            # Check current occupancy for that date
-            occupancy_check = get_office_occupancy(selected_date, selected_date)
-            if not occupancy_check.empty:
-                wfh_on_date = occupancy_check.iloc[0]['wfh_count']
-                in_office = occupancy_check.iloc[0]['in_office']
-                st.info(f"📊 On {selected_date}: **{in_office}** in office, **{wfh_on_date}** working from home")
-                
-                if in_office <= len(employees) * 0.3:
-                    st.warning("⚠️ Warning: Adding this WFH day will result in low office occupancy (<30%)")
-            
+
+            # Date range or single date selection
+            date_mode = st.radio("Select date mode:", ["Single Date", "Date Range"], horizontal=True)
+
+            if date_mode == "Single Date":
+                selected_date = st.date_input("Select Date", value=datetime.now().date())
+                date_range = [selected_date]
+            else:
+                st.write("Select start and end dates:")
+                col_date1, col_date2 = st.columns(2)
+                with col_date1:
+                    start_date = st.date_input("Start Date", value=datetime.now().date(), key="wfh_start")
+                with col_date2:
+                    end_date = st.date_input("End Date", value=datetime.now().date(), key="wfh_end")
+
+                if start_date > end_date:
+                    st.error("❌ Start date must be before or equal to end date")
+                    date_range = []
+                else:
+                    # Generate date range
+                    date_range = pd.date_range(start=start_date, end=end_date).date.tolist()
+                    st.info(f"📅 Selected {len(date_range)} day(s)")
+
             col_a, col_b = st.columns(2)
             with col_a:
-                if st.button("➕ Add WFH Day", type="primary", use_container_width=True):
-                    add_wfh_record(selected_employee, selected_date)
-                    st.success(f"✅ WFH day added for {selected_employee} on {selected_date}")
-                    st.rerun()
-            
+                if st.button("➕ Add WFH Day(s)", type="primary", use_container_width=True):
+                    if date_range:
+                        # Check for conflicts
+                        conflicts = []
+                        for date in date_range:
+                            has_entry, entry_type, details = check_existing_entry(selected_employee, date)
+                            if has_entry and entry_type != 'WFH':
+                                conflicts.append((date, entry_type, details))
+
+                        if conflicts:
+                            st.error(f"❌ Cannot add WFH day(s). {selected_employee} already has the following conflicting entries:")
+                            for conf_date, conf_type, conf_details in conflicts:
+                                st.warning(f"📅 {conf_date}: **{conf_details}**")
+                            st.info("ℹ️ Please remove the existing entry first, then add the new WFH day.")
+                        else:
+                            for date in date_range:
+                                add_wfh_record(selected_employee, date)
+                            if len(date_range) == 1:
+                                st.success(f"✅ WFH day added for {selected_employee} on {date_range[0]}")
+                            else:
+                                st.success(f"✅ {len(date_range)} WFH days added for {selected_employee}")
+                            st.rerun()
+
             with col_b:
-                if st.button("🗑️ Remove WFH Day", use_container_width=True):
-                    remove_wfh_record(selected_employee, selected_date)
-                    st.success(f"✅ WFH day removed for {selected_employee} on {selected_date}")
-                    st.rerun()
+                if st.button("🗑️ Remove WFH Day(s)", use_container_width=True):
+                    if date_range:
+                        for date in date_range:
+                            remove_wfh_record(selected_employee, date)
+                        if len(date_range) == 1:
+                            st.success(f"✅ WFH day removed for {selected_employee} on {date_range[0]}")
+                        else:
+                            st.success(f"✅ {len(date_range)} WFH days removed for {selected_employee}")
+                        st.rerun()
         
         with col2:
             st.subheader("Quick Stats")
@@ -649,7 +859,8 @@ elif page == "Schedule WFH":
 
 # ANNUAL LEAVE PAGE
 elif page == "Schedule Annual Leave":
-    st.header("🌴 Annual Leave Scheduler")
+    st.title("📊 Business Analytics Team Scheduler - Annual Leave")
+    st.markdown("---")
 
     if not employees:
         st.warning("⚠️ No employees added yet. Go to 'Manage Employees' to add team members.")
@@ -691,20 +902,68 @@ elif page == "Schedule Annual Leave":
             if remaining_days < 0:
                 st.error(f"⚠️ Warning: {selected_employee} has scheduled more leave days than available!")
 
-            selected_date = st.date_input("Select Date", value=datetime.now().date(), key="al_date")
+            # Date range or single date selection
+            date_mode = st.radio("Select date mode:", ["Single Date", "Date Range"], horizontal=True, key="al_date_mode")
+
+            if date_mode == "Single Date":
+                selected_date = st.date_input("Select Date", value=datetime.now().date(), key="al_date")
+                date_range = [selected_date]
+            else:
+                st.write("Select start and end dates:")
+                col_date1, col_date2 = st.columns(2)
+                with col_date1:
+                    start_date = st.date_input("Start Date", value=datetime.now().date(), key="al_start")
+                with col_date2:
+                    end_date = st.date_input("End Date", value=datetime.now().date(), key="al_end")
+
+                if start_date > end_date:
+                    st.error("❌ Start date must be before or equal to end date")
+                    date_range = []
+                else:
+                    # Generate date range
+                    date_range = pd.date_range(start=start_date, end=end_date).date.tolist()
+                    st.info(f"📅 Selected {len(date_range)} day(s)")
+
+                    # Warn if exceeding balance
+                    new_scheduled = scheduled_days + len(date_range)
+                    if new_scheduled > leave_balance:
+                        st.warning(f"⚠️ Warning: Adding {len(date_range)} days will exceed leave balance by {new_scheduled - leave_balance} day(s)")
 
             col_a, col_b = st.columns(2)
             with col_a:
-                if st.button("➕ Add Annual Leave Day", type="primary", use_container_width=True):
-                    add_annual_leave_record(selected_employee, selected_date)
-                    st.success(f"✅ Annual Leave day added for {selected_employee} on {selected_date}")
-                    st.rerun()
+                if st.button("➕ Add Annual Leave Day(s)", type="primary", use_container_width=True):
+                    if date_range:
+                        # Check for conflicts
+                        conflicts = []
+                        for date in date_range:
+                            has_entry, entry_type, details = check_existing_entry(selected_employee, date)
+                            if has_entry and entry_type != 'Annual Leave':
+                                conflicts.append((date, entry_type, details))
+
+                        if conflicts:
+                            st.error(f"❌ Cannot add Annual Leave day(s). {selected_employee} already has the following conflicting entries:")
+                            for conf_date, conf_type, conf_details in conflicts:
+                                st.warning(f"📅 {conf_date}: **{conf_details}**")
+                            st.info("ℹ️ Please remove the existing entry first, then add the Annual Leave.")
+                        else:
+                            for date in date_range:
+                                add_annual_leave_record(selected_employee, date)
+                            if len(date_range) == 1:
+                                st.success(f"✅ Annual Leave day added for {selected_employee} on {date_range[0]}")
+                            else:
+                                st.success(f"✅ {len(date_range)} Annual Leave days added for {selected_employee}")
+                            st.rerun()
 
             with col_b:
-                if st.button("🗑️ Remove Annual Leave Day", use_container_width=True):
-                    remove_annual_leave_record(selected_employee, selected_date)
-                    st.success(f"✅ Annual Leave day removed for {selected_employee} on {selected_date}")
-                    st.rerun()
+                if st.button("🗑️ Remove Annual Leave Day(s)", use_container_width=True):
+                    if date_range:
+                        for date in date_range:
+                            remove_annual_leave_record(selected_employee, date)
+                        if len(date_range) == 1:
+                            st.success(f"✅ Annual Leave day removed for {selected_employee} on {date_range[0]}")
+                        else:
+                            st.success(f"✅ {len(date_range)} Annual Leave days removed for {selected_employee}")
+                        st.rerun()
 
         with col2:
             st.subheader("Quick Stats")
@@ -751,9 +1010,136 @@ elif page == "Schedule Annual Leave":
         else:
             st.info("No Annual Leave days scheduled")
 
+# SCHEDULE SEMINARS PAGE
+elif page == "Schedule Seminars":
+    st.title("📊 Business Analytics Team Scheduler - Seminars")
+    st.markdown("---")
+
+    if not employees:
+        st.warning("⚠️ No employees added yet. Go to 'Manage Employees' to add team members.")
+    else:
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            st.subheader("Schedule Seminar Attendance")
+
+            employee_options = [f"{emp['name']} (ID: {emp['id']})" for emp in employees]
+            selected_employee_display = st.selectbox("Select Employee", employee_options, key="seminar_employee")
+            # Extract employee name from display string
+            selected_employee = selected_employee_display.split(" (ID:")[0]
+
+            seminar_name = st.text_input("Seminar Name", placeholder="e.g., Data Analytics Workshop")
+
+            # Date range or single date selection
+            date_mode = st.radio("Select date mode:", ["Single Date", "Date Range"], horizontal=True, key="seminar_date_mode")
+
+            if date_mode == "Single Date":
+                selected_date = st.date_input("Select Date", value=datetime.now().date(), key="seminar_date")
+                date_range = [selected_date]
+            else:
+                st.write("Select start and end dates:")
+                col_date1, col_date2 = st.columns(2)
+                with col_date1:
+                    start_date = st.date_input("Start Date", value=datetime.now().date(), key="seminar_start")
+                with col_date2:
+                    end_date = st.date_input("End Date", value=datetime.now().date(), key="seminar_end")
+
+                if start_date > end_date:
+                    st.error("❌ Start date must be before or equal to end date")
+                    date_range = []
+                else:
+                    # Generate date range
+                    date_range = pd.date_range(start=start_date, end=end_date).date.tolist()
+                    st.info(f"📅 Selected {len(date_range)} day(s) for the seminar")
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("➕ Add Seminar Day(s)", type="primary", use_container_width=True):
+                    if not seminar_name:
+                        st.error("❌ Please enter seminar name")
+                    elif date_range:
+                        # Check for conflicts
+                        conflicts = []
+                        for date in date_range:
+                            has_entry, entry_type, details = check_existing_entry(selected_employee, date)
+                            if has_entry and entry_type != 'Seminar':
+                                conflicts.append((date, entry_type, details))
+
+                        if conflicts:
+                            st.error(f"❌ Cannot add Seminar day(s). {selected_employee} already has the following conflicting entries:")
+                            for conf_date, conf_type, conf_details in conflicts:
+                                st.warning(f"📅 {conf_date}: **{conf_details}**")
+                            st.info("ℹ️ Please remove the existing entry first, then add the Seminar.")
+                        else:
+                            for date in date_range:
+                                add_seminar_record(selected_employee, date, seminar_name)
+                            if len(date_range) == 1:
+                                st.success(f"✅ Seminar day added for {selected_employee} on {date_range[0]}")
+                            else:
+                                st.success(f"✅ {len(date_range)} Seminar days added for {selected_employee}")
+                            st.rerun()
+
+            with col_b:
+                if st.button("🗑️ Remove Seminar Day(s)", use_container_width=True):
+                    if date_range:
+                        for date in date_range:
+                            remove_seminar_record(selected_employee, date)
+                        if len(date_range) == 1:
+                            st.success(f"✅ Seminar day removed for {selected_employee} on {date_range[0]}")
+                        else:
+                            st.success(f"✅ {len(date_range)} Seminar days removed for {selected_employee}")
+                        st.rerun()
+
+        with col2:
+            st.subheader("Quick Stats")
+            seminar_counts_df = get_seminar_counts()
+            employee_seminar_count = seminar_counts_df[seminar_counts_df['employee_name'] == selected_employee]['seminar_days'].values
+
+            if len(employee_seminar_count) > 0:
+                st.metric(f"{selected_employee}'s Seminar Days", int(employee_seminar_count[0]))
+
+        st.markdown("---")
+
+        # Calendar view
+        st.subheader("📆 Seminar Calendar View")
+
+        view_month = st.date_input("Select Month to View", datetime.now().date(), key="seminar_month_view")
+        start_of_month = view_month.replace(day=1)
+        if view_month.month == 12:
+            end_of_month = start_of_month.replace(year=view_month.year + 1, month=1) - timedelta(days=1)
+        else:
+            end_of_month = start_of_month.replace(month=view_month.month + 1) - timedelta(days=1)
+
+        month_seminar_records = load_seminar_records()
+        if not month_seminar_records.empty:
+            month_seminar_records = month_seminar_records[
+                (month_seminar_records['date'] >= pd.to_datetime(start_of_month)) &
+                (month_seminar_records['date'] <= pd.to_datetime(end_of_month))
+            ]
+
+            if not month_seminar_records.empty:
+                calendar_df = month_seminar_records.copy()
+                calendar_df = calendar_df.sort_values('date')
+                calendar_df['date'] = calendar_df['date'].dt.strftime('%Y-%m-%d')
+                calendar_df = calendar_df.rename(columns={
+                    'employee_name': 'Employee',
+                    'date': 'Date',
+                    'status': 'Status',
+                    'seminar_name': 'Seminar Name'
+                })
+
+                # Show count
+                st.info(f"📋 Showing {len(calendar_df)} Seminar record(s) for {view_month.strftime('%B %Y')}")
+                st.dataframe(calendar_df, use_container_width=True, hide_index=True)
+            else:
+                st.info(f"No Seminar days recorded for {view_month.strftime('%B %Y')}")
+        else:
+            st.info("No Seminar days scheduled")
+
 # MANAGE EMPLOYEES PAGE
 elif page == "Manage Employees":
-    st.header("👥 Manage Employees")
+    st.title("📊 Business Analytics Team Scheduler - Manage Employees")
+    st.markdown("---")
 
     col1, col2, col3 = st.columns([1, 1, 1])
 
@@ -819,7 +1205,7 @@ elif page == "Manage Employees":
                     elif edited_id != selected_emp['id'] and any(emp['id'] == edited_id for emp in employees):
                         st.error("❌ Employee ID already exists")
                     else:
-                        # Update WFH and AL records if name changed
+                        # Update WFH, AL, and Seminar records if name changed
                         if edited_name != selected_emp['name']:
                             df_wfh = load_wfh_records()
                             df_wfh.loc[df_wfh['employee_name'] == selected_emp['name'], 'employee_name'] = edited_name
@@ -828,6 +1214,10 @@ elif page == "Manage Employees":
                             df_al = load_annual_leave_records()
                             df_al.loc[df_al['employee_name'] == selected_emp['name'], 'employee_name'] = edited_name
                             save_annual_leave_records(df_al)
+
+                            df_seminar = load_seminar_records()
+                            df_seminar.loc[df_seminar['employee_name'] == selected_emp['name'], 'employee_name'] = edited_name
+                            save_seminar_records(df_seminar)
 
                         # Update employee record
                         for emp in employees:
@@ -858,10 +1248,18 @@ elif page == "Manage Employees":
                 employees = [emp for emp in employees if emp['name'] != emp_name]
                 save_employees(employees)
 
-                # Also remove their WFH records
+                # Also remove their WFH, AL, and Seminar records
                 df = load_wfh_records()
                 df = df[df['employee_name'] != emp_name]
                 save_wfh_records(df)
+
+                df_al = load_annual_leave_records()
+                df_al = df_al[df_al['employee_name'] != emp_name]
+                save_annual_leave_records(df_al)
+
+                df_seminar = load_seminar_records()
+                df_seminar = df_seminar[df_seminar['employee_name'] != emp_name]
+                save_seminar_records(df_seminar)
 
                 st.success(f"✅ Removed {employee_to_remove}")
                 st.rerun()
@@ -909,7 +1307,8 @@ elif page == "Manage Employees":
 
 # REPORTS PAGE
 elif page == "Reports":
-    st.header("📈 Reports & Analytics")
+    st.title("📊 Business Analytics Team Scheduler - Reports")
+    st.markdown("---")
     
     if not employees:
         st.warning("⚠️ No employees added yet. Go to 'Manage Employees' to add team members.")
@@ -966,7 +1365,19 @@ elif page == "Reports":
                 employee_stats = all_emp.merge(employee_stats, on='Employee', how='left').fillna(0)
                 employee_stats['WFH Days'] = employee_stats['WFH Days'].astype(int)
 
-                st.dataframe(employee_stats, use_container_width=True, hide_index=True)
+                # Use a container with limited width (40% of page)
+                col1, col2 = st.columns([2, 3])
+                with col1:
+                    st.dataframe(
+                        employee_stats,
+                        hide_index=True,
+                        column_config={
+                            'Employee': st.column_config.TextColumn('Employee'),
+                            'Employee ID': st.column_config.TextColumn('Employee ID'),
+                            'WFH Days': st.column_config.NumberColumn('WFH Days')
+                        },
+                        use_container_width=True
+                    )
 
                 # WFH Days Balance Chart
                 st.markdown("---")
@@ -1032,15 +1443,15 @@ elif page == "Reports":
                 # Display with centered alignment for day columns
                 st.dataframe(
                     pivot_table,
-                    use_container_width=True,
                     hide_index=True,
                     column_config={
-                        'Monday': st.column_config.NumberColumn('Monday', format='%d', help='WFH count on Monday'),
-                        'Tuesday': st.column_config.NumberColumn('Tuesday', format='%d', help='WFH count on Tuesday'),
-                        'Wednesday': st.column_config.NumberColumn('Wednesday', format='%d', help='WFH count on Wednesday'),
-                        'Thursday': st.column_config.NumberColumn('Thursday', format='%d', help='WFH count on Thursday'),
-                        'Friday': st.column_config.NumberColumn('Friday', format='%d', help='WFH count on Friday'),
-                        'Total': st.column_config.NumberColumn('Total', format='%d', help='Total WFH days')
+                        'Employee': st.column_config.TextColumn('Employee', width='medium'),
+                        'Monday': st.column_config.NumberColumn('Monday', format='%d', help='WFH count on Monday', width='small'),
+                        'Tuesday': st.column_config.NumberColumn('Tuesday', format='%d', help='WFH count on Tuesday', width='small'),
+                        'Wednesday': st.column_config.NumberColumn('Wednesday', format='%d', help='WFH count on Wednesday', width='small'),
+                        'Thursday': st.column_config.NumberColumn('Thursday', format='%d', help='WFH count on Thursday', width='small'),
+                        'Friday': st.column_config.NumberColumn('Friday', format='%d', help='WFH count on Friday', width='small'),
+                        'Total': st.column_config.NumberColumn('Total', format='%d', help='Total WFH days', width='small')
                     }
                 )
 
@@ -1098,16 +1509,21 @@ elif page == "Reports":
                 return 'background-color: #ffcccc'
             return ''
 
-        st.dataframe(
-            balance_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                'Leave Balance': st.column_config.NumberColumn('Leave Balance', format='%d days'),
-                'Scheduled': st.column_config.NumberColumn('Scheduled', format='%d days'),
-                'Remaining': st.column_config.NumberColumn('Remaining', format='%d days')
-            }
-        )
+        # Use a container with limited width (50% of page)
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.dataframe(
+                balance_df,
+                hide_index=True,
+                column_config={
+                    'Employee': st.column_config.TextColumn('Employee'),
+                    'Employee ID': st.column_config.TextColumn('Employee ID'),
+                    'Leave Balance': st.column_config.NumberColumn('Leave Balance', format='%d days'),
+                    'Scheduled': st.column_config.NumberColumn('Scheduled', format='%d days'),
+                    'Remaining': st.column_config.NumberColumn('Remaining', format='%d days')
+                },
+                use_container_width=True
+            )
 
         # Show warnings for negative balances
         negative_balances = balance_df[balance_df['Remaining'] < 0]
@@ -1163,6 +1579,111 @@ elif page == "Reports":
             )
             st.plotly_chart(fig_remaining, use_container_width=True)
 
+        # Seminar Summary Report
+        st.markdown("---")
+        st.subheader("📚 Seminar Attendance Report")
+
+        df_seminar = load_seminar_records()
+        if not df_seminar.empty:
+            period_seminar_records = df_seminar[
+                (df_seminar['date'] >= pd.to_datetime(start_date)) &
+                (df_seminar['date'] <= pd.to_datetime(end_date))
+            ]
+
+            if not period_seminar_records.empty:
+                col_sem_a, col_sem_b, col_sem_c = st.columns(3)
+
+                with col_sem_a:
+                    st.metric("Total Seminar Days", len(period_seminar_records))
+
+                with col_sem_b:
+                    unique_seminars = period_seminar_records['seminar_name'].nunique()
+                    st.metric("Unique Seminars", unique_seminars)
+
+                with col_sem_c:
+                    unique_attendees = period_seminar_records['employee_name'].nunique()
+                    st.metric("Employees Attending", unique_attendees)
+
+                st.markdown("---")
+
+                # Seminar attendance breakdown
+                st.subheader("Seminar Attendance by Employee")
+
+                seminar_stats = period_seminar_records.groupby('employee_name').agg({
+                    'date': 'count'
+                }).reset_index()
+                seminar_stats.columns = ['Employee', 'Seminar Days']
+                seminar_stats = seminar_stats.sort_values('Seminar Days', ascending=False)
+
+                # Add employees with 0 days
+                all_emp_seminar = pd.DataFrame([
+                    {'Employee': emp['name'], 'Employee ID': emp['id']}
+                    for emp in employees
+                ])
+                seminar_stats = all_emp_seminar.merge(seminar_stats, on='Employee', how='left').fillna(0)
+                seminar_stats['Seminar Days'] = seminar_stats['Seminar Days'].astype(int)
+
+                # Use a container with limited width (40% of page)
+                col1, col2 = st.columns([2, 3])
+                with col1:
+                    st.dataframe(
+                        seminar_stats,
+                        hide_index=True,
+                        column_config={
+                            'Employee': st.column_config.TextColumn('Employee'),
+                            'Employee ID': st.column_config.TextColumn('Employee ID'),
+                            'Seminar Days': st.column_config.NumberColumn('Seminar Days')
+                        },
+                        use_container_width=True
+                    )
+
+                # Seminar list with attendees
+                st.markdown("---")
+                st.subheader("Seminar Details")
+
+                seminar_details = period_seminar_records.copy()
+                seminar_details['date'] = seminar_details['date'].dt.strftime('%Y-%m-%d')
+                seminar_details = seminar_details.rename(columns={
+                    'employee_name': 'Employee',
+                    'date': 'Date',
+                    'seminar_name': 'Seminar Name',
+                    'status': 'Status'
+                })
+                seminar_details = seminar_details.sort_values('Date', ascending=False)
+
+                # Use a container with limited width (60% of page for this wider table)
+                col1, col2 = st.columns([3, 2])
+                with col1:
+                    st.dataframe(
+                        seminar_details,
+                        hide_index=True,
+                        column_config={
+                            'Employee': st.column_config.TextColumn('Employee'),
+                            'Date': st.column_config.TextColumn('Date'),
+                            'Seminar Name': st.column_config.TextColumn('Seminar Name'),
+                            'Status': st.column_config.TextColumn('Status')
+                        },
+                        use_container_width=True
+                    )
+
+                # Chart
+                st.markdown("---")
+                st.subheader("Seminar Attendance Chart")
+
+                counts_seminar_df = get_seminar_counts()
+
+                fig_seminar = px.bar(counts_seminar_df, x='employee_name', y='seminar_days',
+                            title='Seminar Days per Employee',
+                            labels={'employee_name': 'Employee', 'seminar_days': 'Seminar Days'},
+                            color='seminar_days',
+                            color_continuous_scale='Blues')
+                fig_seminar.update_layout(showlegend=False)
+                st.plotly_chart(fig_seminar, use_container_width=True)
+            else:
+                st.info("No seminar records found for the selected date range")
+        else:
+            st.info("No seminar records available")
+
 # Footer
 st.markdown("---")
-st.markdown("*Business Analytics Team Scheduler - Manage the team's Annual Leave and Work-from-home days efficiently*")
+st.markdown("*Business Analytics Team Scheduler - Manage the team's Annual Leave, Work-from-home days, and Seminar attendance efficiently*")
