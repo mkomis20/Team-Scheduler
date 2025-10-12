@@ -119,7 +119,7 @@ pip install -r requirements.txt
 Navigate to the application directory and run:
 
 ```bash
-streamlit run WFH.py
+streamlit run app.py
 ```
 
 The application will open in your default web browser at `http://localhost:8501`
@@ -206,7 +206,7 @@ These files are automatically created on first run.
 
 ### Changing the Default Admin
 
-Edit line 59 in [WFH.py](WFH.py#L59) to set a different default admin:
+Edit line 59 in [app.py](app.py#L59) to set a different default admin:
 
 ```python
 emp['role'] = 'Admin' if emp['name'] == 'Your Name' else 'User'
@@ -218,7 +218,7 @@ Modify the default annual leave balance (default: 20 days) in the employee manag
 
 ### Low Occupancy Threshold
 
-Change the 30% threshold in [WFH.py:558](WFH.py#L558) and [WFH.py:589](WFH.py#L589):
+Change the 30% threshold in [app.py:558](app.py#L558) and [app.py:589](app.py#L589):
 
 ```python
 low_occupancy = occupancy[occupancy['in_office'] < len(employees) * 0.3]  # Change 0.3 to desired threshold
