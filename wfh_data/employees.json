@@ -1,0 +1,65 @@
+[
+  {
+    "name": "MK - TechTok",
+    "id": "4378",
+    "annual_leave_balance": 20,
+    "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+    "role": "Admin"
+  },
+  {
+    "name": "AV - DataStar",
+    "id": "V933",
+    "annual_leave_balance": 20,
+    "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+    "role": "User"
+  },
+  {
+    "name": "MD - DataBaker",
+    "id": "4740",
+    "annual_leave_balance": 20,
+    "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+    "role": "User"
+  },
+  {
+    "name": "NN - StatsRebel",
+    "id": "5774",
+    "annual_leave_balance": 20,
+    "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+    "role": "User"
+  },
+  {
+    "name": "EZ - PivotDancer",
+    "id": "4458",
+    "annual_leave_balance": 20,
+    "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+    "role": "User"
+  },
+  {
+    "name": "EK - QueryFury",
+    "id": "5201",
+    "annual_leave_balance": 20,
+    "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+    "role": "User"
+  },
+  {
+    "name": "CL - FunInvestor",
+    "id": "V642",
+    "annual_leave_balance": 20,
+    "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+    "role": "User"
+  },
+  {
+    "name": "MP - FitProfit",
+    "id": "W162",
+    "annual_leave_balance": 20,
+    "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+    "role": "User"
+  },
+  {
+    "name": "NL - DashQueen",
+    "id": "",
+    "annual_leave_balance": 20,
+    "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+    "role": "User"
+  }
+]

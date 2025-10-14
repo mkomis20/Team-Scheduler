@@ -23,3 +23,4 @@ Thumbs.db
 # Data files (if you have sensitive data)
 *.csv
 *.json
+!wfh_data/employees.json
