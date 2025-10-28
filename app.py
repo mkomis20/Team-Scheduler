@@ -26,15 +26,15 @@ def init_data_files():
             json.dump([], f)
 
     if not WFH_RECORDS_FILE.exists():
-        df = pd.DataFrame(columns=['employee_name', 'date', 'status'])
+        df = pd.DataFrame(columns=['employee_id', 'date', 'status'])
         df.to_csv(WFH_RECORDS_FILE, index=False)
 
     if not ANNUAL_LEAVE_RECORDS_FILE.exists():
-        df = pd.DataFrame(columns=['employee_name', 'date', 'status'])
+        df = pd.DataFrame(columns=['employee_id', 'date', 'status'])
         df.to_csv(ANNUAL_LEAVE_RECORDS_FILE, index=False)
 
     if not SEMINAR_RECORDS_FILE.exists():
-        df = pd.DataFrame(columns=['employee_name', 'date', 'status', 'seminar_name'])
+        df = pd.DataFrame(columns=['employee_id', 'date', 'status', 'seminar_name'])
         df.to_csv(SEMINAR_RECORDS_FILE, index=False)
 
 # Hash password
@@ -70,9 +70,21 @@ def save_employees(employees):
     with open(EMPLOYEES_FILE, 'w') as f:
         json.dump(employees, f, indent=2)
 
+# Helper function to get employee ID from name
+def get_employee_id_by_name(employee_name):
+    employees = load_employees()
+    emp = next((e for e in employees if e['name'] == employee_name), None)
+    return emp['id'] if emp else None
+
+# Helper function to get employee name from ID
+def get_employee_name_by_id(employee_id):
+    employees = load_employees()
+    emp = next((e for e in employees if e['id'] == employee_id), None)
+    return emp['name'] if emp else f"Unknown ({employee_id})"
+
 # Load WFH records
 def load_wfh_records():
-    df = pd.read_csv(WFH_RECORDS_FILE)
+    df = pd.read_csv(WFH_RECORDS_FILE, dtype={'employee_id': str})
     if not df.empty:
         df['date'] = pd.to_datetime(df['date'])
     return df
@@ -82,15 +94,15 @@ def save_wfh_records(df):
     df.to_csv(WFH_RECORDS_FILE, index=False)
 
 # Add WFH record
-def add_wfh_record(employee, date, status='WFH'):
+def add_wfh_record(employee_id, date, status='WFH'):
     df = load_wfh_records()
-    
+
     # Remove existing record for same employee and date
-    df = df[~((df['employee_name'] == employee) & (df['date'] == pd.to_datetime(date)))]
-    
+    df = df[~((df['employee_id'] == employee_id) & (df['date'] == pd.to_datetime(date)))]
+
     # Add new record
     new_record = pd.DataFrame({
-        'employee_name': [employee],
+        'employee_id': [employee_id],
         'date': [pd.to_datetime(date)],
         'status': [status]
     })
@@ -98,14 +110,14 @@ def add_wfh_record(employee, date, status='WFH'):
     save_wfh_records(df)
 
 # Remove WFH record
-def remove_wfh_record(employee, date):
+def remove_wfh_record(employee_id, date):
     df = load_wfh_records()
-    df = df[~((df['employee_name'] == employee) & (df['date'] == pd.to_datetime(date)))]
+    df = df[~((df['employee_id'] == employee_id) & (df['date'] == pd.to_datetime(date)))]
     save_wfh_records(df)
 
 # Load Annual Leave records
 def load_annual_leave_records():
-    df = pd.read_csv(ANNUAL_LEAVE_RECORDS_FILE)
+    df = pd.read_csv(ANNUAL_LEAVE_RECORDS_FILE, dtype={'employee_id': str})
     if not df.empty:
         df['date'] = pd.to_datetime(df['date'])
     return df
@@ -115,15 +127,15 @@ def save_annual_leave_records(df):
     df.to_csv(ANNUAL_LEAVE_RECORDS_FILE, index=False)
 
 # Add Annual Leave record
-def add_annual_leave_record(employee, date, status='Annual Leave'):
+def add_annual_leave_record(employee_id, date, status='Annual Leave'):
     df = load_annual_leave_records()
 
     # Remove existing record for same employee and date
-    df = df[~((df['employee_name'] == employee) & (df['date'] == pd.to_datetime(date)))]
+    df = df[~((df['employee_id'] == employee_id) & (df['date'] == pd.to_datetime(date)))]
 
     # Add new record
     new_record = pd.DataFrame({
-        'employee_name': [employee],
+        'employee_id': [employee_id],
         'date': [pd.to_datetime(date)],
         'status': [status]
     })
@@ -131,32 +143,33 @@ def add_annual_leave_record(employee, date, status='Annual Leave'):
     save_annual_leave_records(df)
 
 # Remove Annual Leave record
-def remove_annual_leave_record(employee, date):
+def remove_annual_leave_record(employee_id, date):
     df = load_annual_leave_records()
-    df = df[~((df['employee_name'] == employee) & (df['date'] == pd.to_datetime(date)))]
+    df = df[~((df['employee_id'] == employee_id) & (df['date'] == pd.to_datetime(date)))]
     save_annual_leave_records(df)
 
 # Get Annual Leave count per employee
 def get_annual_leave_counts():
     df = load_annual_leave_records()
     employees = load_employees()
+    employee_ids = [emp['id'] for emp in employees]
     employee_names = [emp['name'] for emp in employees]
 
     if df.empty:
-        return pd.DataFrame({'employee_name': employee_names, 'al_days': [0] * len(employee_names)})
+        return pd.DataFrame({'employee_id': employee_ids, 'employee_name': employee_names, 'al_days': [0] * len(employee_ids)})
 
-    counts = df.groupby('employee_name').size().reset_index(name='al_days')
+    counts = df.groupby('employee_id').size().reset_index(name='al_days')
 
     # Add employees with 0 AL days
-    all_employees = pd.DataFrame({'employee_name': employee_names})
-    counts = all_employees.merge(counts, on='employee_name', how='left').fillna(0)
+    all_employees = pd.DataFrame({'employee_id': employee_ids, 'employee_name': employee_names})
+    counts = all_employees.merge(counts, on='employee_id', how='left').fillna(0)
     counts['al_days'] = counts['al_days'].astype(int)
 
     return counts
 
 # Load Seminar records
 def load_seminar_records():
-    df = pd.read_csv(SEMINAR_RECORDS_FILE)
+    df = pd.read_csv(SEMINAR_RECORDS_FILE, dtype={'employee_id': str})
     if not df.empty:
         df['date'] = pd.to_datetime(df['date'])
     return df
@@ -166,15 +179,15 @@ def save_seminar_records(df):
     df.to_csv(SEMINAR_RECORDS_FILE, index=False)
 
 # Add Seminar record
-def add_seminar_record(employee, date, seminar_name, status='Seminar'):
+def add_seminar_record(employee_id, date, seminar_name, status='Seminar'):
     df = load_seminar_records()
 
     # Remove existing record for same employee and date
-    df = df[~((df['employee_name'] == employee) & (df['date'] == pd.to_datetime(date)))]
+    df = df[~((df['employee_id'] == employee_id) & (df['date'] == pd.to_datetime(date)))]
 
     # Add new record
     new_record = pd.DataFrame({
-        'employee_name': [employee],
+        'employee_id': [employee_id],
         'date': [pd.to_datetime(date)],
         'status': [status],
         'seminar_name': [seminar_name]
@@ -183,31 +196,32 @@ def add_seminar_record(employee, date, seminar_name, status='Seminar'):
     save_seminar_records(df)
 
 # Remove Seminar record
-def remove_seminar_record(employee, date):
+def remove_seminar_record(employee_id, date):
     df = load_seminar_records()
-    df = df[~((df['employee_name'] == employee) & (df['date'] == pd.to_datetime(date)))]
+    df = df[~((df['employee_id'] == employee_id) & (df['date'] == pd.to_datetime(date)))]
     save_seminar_records(df)
 
 # Get Seminar count per employee
 def get_seminar_counts():
     df = load_seminar_records()
     employees = load_employees()
+    employee_ids = [emp['id'] for emp in employees]
     employee_names = [emp['name'] for emp in employees]
 
     if df.empty:
-        return pd.DataFrame({'employee_name': employee_names, 'seminar_days': [0] * len(employee_names)})
+        return pd.DataFrame({'employee_id': employee_ids, 'employee_name': employee_names, 'seminar_days': [0] * len(employee_ids)})
 
-    counts = df.groupby('employee_name').size().reset_index(name='seminar_days')
+    counts = df.groupby('employee_id').size().reset_index(name='seminar_days')
 
     # Add employees with 0 Seminar days
-    all_employees = pd.DataFrame({'employee_name': employee_names})
-    counts = all_employees.merge(counts, on='employee_name', how='left').fillna(0)
+    all_employees = pd.DataFrame({'employee_id': employee_ids, 'employee_name': employee_names})
+    counts = all_employees.merge(counts, on='employee_id', how='left').fillna(0)
     counts['seminar_days'] = counts['seminar_days'].astype(int)
 
     return counts
 
 # Check if employee has existing entry for a specific date
-def check_existing_entry(employee, date):
+def check_existing_entry(employee_id, date):
     """
     Check if an employee already has an entry (WFH, Annual Leave, or Seminar) for a given date.
     Returns: tuple (has_entry: bool, entry_type: str or None, details: str or None)
@@ -217,21 +231,21 @@ def check_existing_entry(employee, date):
     # Check WFH records
     df_wfh = load_wfh_records()
     if not df_wfh.empty:
-        wfh_match = df_wfh[(df_wfh['employee_name'] == employee) & (df_wfh['date'] == date_pd)]
+        wfh_match = df_wfh[(df_wfh['employee_id'] == employee_id) & (df_wfh['date'] == date_pd)]
         if not wfh_match.empty:
             return (True, 'WFH', 'Work From Home')
 
     # Check Annual Leave records
     df_al = load_annual_leave_records()
     if not df_al.empty:
-        al_match = df_al[(df_al['employee_name'] == employee) & (df_al['date'] == date_pd)]
+        al_match = df_al[(df_al['employee_id'] == employee_id) & (df_al['date'] == date_pd)]
         if not al_match.empty:
             return (True, 'Annual Leave', 'Annual Leave')
 
     # Check Seminar records
     df_seminar = load_seminar_records()
     if not df_seminar.empty:
-        seminar_match = df_seminar[(df_seminar['employee_name'] == employee) & (df_seminar['date'] == date_pd)]
+        seminar_match = df_seminar[(df_seminar['employee_id'] == employee_id) & (df_seminar['date'] == date_pd)]
         if not seminar_match.empty:
             seminar_name = seminar_match.iloc[0]['seminar_name']
             return (True, 'Seminar', f'Seminar: {seminar_name}')
@@ -242,16 +256,17 @@ def check_existing_entry(employee, date):
 def get_wfh_counts():
     df = load_wfh_records()
     employees = load_employees()
+    employee_ids = [emp['id'] for emp in employees]
     employee_names = [emp['name'] for emp in employees]
 
     if df.empty:
-        return pd.DataFrame({'employee_name': employee_names, 'wfh_days': [0] * len(employee_names)})
+        return pd.DataFrame({'employee_id': employee_ids, 'employee_name': employee_names, 'wfh_days': [0] * len(employee_ids)})
 
-    counts = df.groupby('employee_name').size().reset_index(name='wfh_days')
+    counts = df.groupby('employee_id').size().reset_index(name='wfh_days')
 
     # Add employees with 0 WFH days
-    all_employees = pd.DataFrame({'employee_name': employee_names})
-    counts = all_employees.merge(counts, on='employee_name', how='left').fillna(0)
+    all_employees = pd.DataFrame({'employee_id': employee_ids, 'employee_name': employee_names})
+    counts = all_employees.merge(counts, on='employee_id', how='left').fillna(0)
     counts['wfh_days'] = counts['wfh_days'].astype(int)
 
     return counts
@@ -507,15 +522,27 @@ if page == "Dashboard":
             # Show 5 weeks
             calendar_end = start_of_week + timedelta(days=35)
 
-            # Group WFH employees by date
-            wfh_by_date = df_records.groupby('date')['employee_name'].apply(list).to_dict()
+            # Group WFH employees by date (convert IDs to names for display)
+            if not df_records.empty:
+                df_records_display = df_records.copy()
+                df_records_display['employee_name'] = df_records_display['employee_id'].apply(get_employee_name_by_id)
+                wfh_by_date = df_records_display.groupby('date')['employee_name'].apply(list).to_dict()
+            else:
+                wfh_by_date = {}
 
-            # Group Annual Leave employees by date
-            al_by_date = df_al_records.groupby('date')['employee_name'].apply(list).to_dict() if not df_al_records.empty else {}
+            # Group Annual Leave employees by date (convert IDs to names for display)
+            if not df_al_records.empty:
+                df_al_display = df_al_records.copy()
+                df_al_display['employee_name'] = df_al_display['employee_id'].apply(get_employee_name_by_id)
+                al_by_date = df_al_display.groupby('date')['employee_name'].apply(list).to_dict()
+            else:
+                al_by_date = {}
 
-            # Group Seminar employees by date (with seminar names)
+            # Group Seminar employees by date (with seminar names, convert IDs to names for display)
             if not df_seminar_records.empty:
-                seminar_by_date = df_seminar_records.groupby('date').apply(
+                df_seminar_display = df_seminar_records.copy()
+                df_seminar_display['employee_name'] = df_seminar_display['employee_id'].apply(get_employee_name_by_id)
+                seminar_by_date = df_seminar_display.groupby('date').apply(
                     lambda x: list(zip(x['employee_name'], x['seminar_name']))
                 ).to_dict()
             else:
@@ -751,8 +778,9 @@ elif page == "Schedule WFH":
 
             employee_options = [f"{emp['name']} (ID: {emp['id']})" for emp in employees]
             selected_employee_display = st.selectbox("Select Employee", employee_options)
-            # Extract employee name from display string
-            selected_employee = selected_employee_display.split(" (ID:")[0]
+            # Extract employee name and ID from display string
+            selected_employee_name = selected_employee_display.split(" (ID:")[0]
+            selected_employee_id = selected_employee_display.split("ID: ")[1].rstrip(")")
 
             # Date range or single date selection
             date_mode = st.radio("Select date mode:", ["Single Date", "Date Range"], horizontal=True)
@@ -783,42 +811,42 @@ elif page == "Schedule WFH":
                         # Check for conflicts
                         conflicts = []
                         for date in date_range:
-                            has_entry, entry_type, details = check_existing_entry(selected_employee, date)
+                            has_entry, entry_type, details = check_existing_entry(selected_employee_id, date)
                             if has_entry and entry_type != 'WFH':
                                 conflicts.append((date, entry_type, details))
 
                         if conflicts:
-                            st.error(f"❌ Cannot add WFH day(s). {selected_employee} already has the following conflicting entries:")
+                            st.error(f"❌ Cannot add WFH day(s). {selected_employee_name} already has the following conflicting entries:")
                             for conf_date, conf_type, conf_details in conflicts:
                                 st.warning(f"📅 {conf_date}: **{conf_details}**")
                             st.info("ℹ️ Please remove the existing entry first, then add the new WFH day.")
                         else:
                             for date in date_range:
-                                add_wfh_record(selected_employee, date)
+                                add_wfh_record(selected_employee_id, date)
                             if len(date_range) == 1:
-                                st.success(f"✅ WFH day added for {selected_employee} on {date_range[0]}")
+                                st.success(f"✅ WFH day added for {selected_employee_name} on {date_range[0]}")
                             else:
-                                st.success(f"✅ {len(date_range)} WFH days added for {selected_employee}")
+                                st.success(f"✅ {len(date_range)} WFH days added for {selected_employee_name}")
                             st.rerun()
 
             with col_b:
                 if st.button("🗑️ Remove WFH Day(s)", use_container_width=True):
                     if date_range:
                         for date in date_range:
-                            remove_wfh_record(selected_employee, date)
+                            remove_wfh_record(selected_employee_id, date)
                         if len(date_range) == 1:
-                            st.success(f"✅ WFH day removed for {selected_employee} on {date_range[0]}")
+                            st.success(f"✅ WFH day removed for {selected_employee_name} on {date_range[0]}")
                         else:
-                            st.success(f"✅ {len(date_range)} WFH days removed for {selected_employee}")
+                            st.success(f"✅ {len(date_range)} WFH days removed for {selected_employee_name}")
                         st.rerun()
         
         with col2:
             st.subheader("Quick Stats")
             counts_df = get_wfh_counts()
-            employee_count = counts_df[counts_df['employee_name'] == selected_employee]['wfh_days'].values
-            
+            employee_count = counts_df[counts_df['employee_id'] == selected_employee_id]['wfh_days'].values
+
             if len(employee_count) > 0:
-                st.metric(f"{selected_employee}'s WFH Days", int(employee_count[0]))
+                st.metric(f"{selected_employee_name}'s WFH Days", int(employee_count[0]))
         
         st.markdown("---")
 
@@ -841,13 +869,10 @@ elif page == "Schedule WFH":
 
             if not month_records.empty:
                 calendar_df = month_records.copy()
+                calendar_df['Employee'] = calendar_df['employee_id'].apply(get_employee_name_by_id)
                 calendar_df = calendar_df.sort_values('date')
-                calendar_df['date'] = calendar_df['date'].dt.strftime('%Y-%m-%d')
-                calendar_df = calendar_df.rename(columns={
-                    'employee_name': 'Employee',
-                    'date': 'Date',
-                    'status': 'Status'
-                })
+                calendar_df['Date'] = calendar_df['date'].dt.strftime('%Y-%m-%d')
+                calendar_df = calendar_df[['Employee', 'Date', 'status']].rename(columns={'status': 'Status'})
 
                 # Show count
                 st.info(f"📋 Showing {len(calendar_df)} WFH record(s) for {view_month.strftime('%B %Y')}")
@@ -872,17 +897,18 @@ elif page == "Schedule Annual Leave":
 
             employee_options = [f"{emp['name']} (ID: {emp['id']})" for emp in employees]
             selected_employee_display = st.selectbox("Select Employee", employee_options, key="al_employee")
-            # Extract employee name from display string
-            selected_employee = selected_employee_display.split(" (ID:")[0]
+            # Extract employee name and ID from display string
+            selected_employee_name = selected_employee_display.split(" (ID:")[0]
+            selected_employee_id = selected_employee_display.split("ID: ")[1].rstrip(")")
 
             # Get employee's annual leave balance
-            selected_emp_obj = next((emp for emp in employees if emp['name'] == selected_employee), None)
+            selected_emp_obj = next((emp for emp in employees if emp['id'] == selected_employee_id), None)
             leave_balance = selected_emp_obj.get('annual_leave_balance', 20) if selected_emp_obj else 20
 
             # Get scheduled leave days for this employee
             al_df = load_annual_leave_records()
             if not al_df.empty:
-                emp_scheduled = al_df[al_df['employee_name'] == selected_employee]
+                emp_scheduled = al_df[al_df['employee_id'] == selected_employee_id]
                 scheduled_days = len(emp_scheduled)
             else:
                 scheduled_days = 0
@@ -900,7 +926,7 @@ elif page == "Schedule Annual Leave":
                 st.metric("Remaining", f"{remaining_days} days", delta=None if remaining_days >= 0 else "⚠️ Over limit")
 
             if remaining_days < 0:
-                st.error(f"⚠️ Warning: {selected_employee} has scheduled more leave days than available!")
+                st.error(f"⚠️ Warning: {selected_employee_name} has scheduled more leave days than available!")
 
             # Date range or single date selection
             date_mode = st.radio("Select date mode:", ["Single Date", "Date Range"], horizontal=True, key="al_date_mode")
@@ -936,42 +962,42 @@ elif page == "Schedule Annual Leave":
                         # Check for conflicts
                         conflicts = []
                         for date in date_range:
-                            has_entry, entry_type, details = check_existing_entry(selected_employee, date)
+                            has_entry, entry_type, details = check_existing_entry(selected_employee_id, date)
                             if has_entry and entry_type != 'Annual Leave':
                                 conflicts.append((date, entry_type, details))
 
                         if conflicts:
-                            st.error(f"❌ Cannot add Annual Leave day(s). {selected_employee} already has the following conflicting entries:")
+                            st.error(f"❌ Cannot add Annual Leave day(s). {selected_employee_name} already has the following conflicting entries:")
                             for conf_date, conf_type, conf_details in conflicts:
                                 st.warning(f"📅 {conf_date}: **{conf_details}**")
                             st.info("ℹ️ Please remove the existing entry first, then add the Annual Leave.")
                         else:
                             for date in date_range:
-                                add_annual_leave_record(selected_employee, date)
+                                add_annual_leave_record(selected_employee_id, date)
                             if len(date_range) == 1:
-                                st.success(f"✅ Annual Leave day added for {selected_employee} on {date_range[0]}")
+                                st.success(f"✅ Annual Leave day added for {selected_employee_name} on {date_range[0]}")
                             else:
-                                st.success(f"✅ {len(date_range)} Annual Leave days added for {selected_employee}")
+                                st.success(f"✅ {len(date_range)} Annual Leave days added for {selected_employee_name}")
                             st.rerun()
 
             with col_b:
                 if st.button("🗑️ Remove Annual Leave Day(s)", use_container_width=True):
                     if date_range:
                         for date in date_range:
-                            remove_annual_leave_record(selected_employee, date)
+                            remove_annual_leave_record(selected_employee_id, date)
                         if len(date_range) == 1:
-                            st.success(f"✅ Annual Leave day removed for {selected_employee} on {date_range[0]}")
+                            st.success(f"✅ Annual Leave day removed for {selected_employee_name} on {date_range[0]}")
                         else:
-                            st.success(f"✅ {len(date_range)} Annual Leave days removed for {selected_employee}")
+                            st.success(f"✅ {len(date_range)} Annual Leave days removed for {selected_employee_name}")
                         st.rerun()
 
         with col2:
             st.subheader("Quick Stats")
             al_counts_df = get_annual_leave_counts()
-            employee_al_count = al_counts_df[al_counts_df['employee_name'] == selected_employee]['al_days'].values
+            employee_al_count = al_counts_df[al_counts_df['employee_id'] == selected_employee_id]['al_days'].values
 
             if len(employee_al_count) > 0:
-                st.metric(f"{selected_employee}'s AL Days", int(employee_al_count[0]))
+                st.metric(f"{selected_employee_name}'s AL Days", int(employee_al_count[0]))
 
         st.markdown("---")
 
@@ -994,13 +1020,10 @@ elif page == "Schedule Annual Leave":
 
             if not month_al_records.empty:
                 calendar_df = month_al_records.copy()
+                calendar_df['Employee'] = calendar_df['employee_id'].apply(get_employee_name_by_id)
                 calendar_df = calendar_df.sort_values('date')
-                calendar_df['date'] = calendar_df['date'].dt.strftime('%Y-%m-%d')
-                calendar_df = calendar_df.rename(columns={
-                    'employee_name': 'Employee',
-                    'date': 'Date',
-                    'status': 'Status'
-                })
+                calendar_df['Date'] = calendar_df['date'].dt.strftime('%Y-%m-%d')
+                calendar_df = calendar_df[['Employee', 'Date', 'status']].rename(columns={'status': 'Status'})
 
                 # Show count
                 st.info(f"📋 Showing {len(calendar_df)} Annual Leave record(s) for {view_month.strftime('%B %Y')}")
@@ -1025,8 +1048,9 @@ elif page == "Schedule Seminars":
 
             employee_options = [f"{emp['name']} (ID: {emp['id']})" for emp in employees]
             selected_employee_display = st.selectbox("Select Employee", employee_options, key="seminar_employee")
-            # Extract employee name from display string
-            selected_employee = selected_employee_display.split(" (ID:")[0]
+            # Extract employee name and ID from display string
+            selected_employee_name = selected_employee_display.split(" (ID:")[0]
+            selected_employee_id = selected_employee_display.split("ID: ")[1].rstrip(")")
 
             seminar_name = st.text_input("Seminar Name", placeholder="e.g., Data Analytics Workshop")
 
@@ -1061,42 +1085,42 @@ elif page == "Schedule Seminars":
                         # Check for conflicts
                         conflicts = []
                         for date in date_range:
-                            has_entry, entry_type, details = check_existing_entry(selected_employee, date)
+                            has_entry, entry_type, details = check_existing_entry(selected_employee_id, date)
                             if has_entry and entry_type != 'Seminar':
                                 conflicts.append((date, entry_type, details))
 
                         if conflicts:
-                            st.error(f"❌ Cannot add Seminar day(s). {selected_employee} already has the following conflicting entries:")
+                            st.error(f"❌ Cannot add Seminar day(s). {selected_employee_name} already has the following conflicting entries:")
                             for conf_date, conf_type, conf_details in conflicts:
                                 st.warning(f"📅 {conf_date}: **{conf_details}**")
                             st.info("ℹ️ Please remove the existing entry first, then add the Seminar.")
                         else:
                             for date in date_range:
-                                add_seminar_record(selected_employee, date, seminar_name)
+                                add_seminar_record(selected_employee_id, date, seminar_name)
                             if len(date_range) == 1:
-                                st.success(f"✅ Seminar day added for {selected_employee} on {date_range[0]}")
+                                st.success(f"✅ Seminar day added for {selected_employee_name} on {date_range[0]}")
                             else:
-                                st.success(f"✅ {len(date_range)} Seminar days added for {selected_employee}")
+                                st.success(f"✅ {len(date_range)} Seminar days added for {selected_employee_name}")
                             st.rerun()
 
             with col_b:
                 if st.button("🗑️ Remove Seminar Day(s)", use_container_width=True):
                     if date_range:
                         for date in date_range:
-                            remove_seminar_record(selected_employee, date)
+                            remove_seminar_record(selected_employee_id, date)
                         if len(date_range) == 1:
-                            st.success(f"✅ Seminar day removed for {selected_employee} on {date_range[0]}")
+                            st.success(f"✅ Seminar day removed for {selected_employee_name} on {date_range[0]}")
                         else:
-                            st.success(f"✅ {len(date_range)} Seminar days removed for {selected_employee}")
+                            st.success(f"✅ {len(date_range)} Seminar days removed for {selected_employee_name}")
                         st.rerun()
 
         with col2:
             st.subheader("Quick Stats")
             seminar_counts_df = get_seminar_counts()
-            employee_seminar_count = seminar_counts_df[seminar_counts_df['employee_name'] == selected_employee]['seminar_days'].values
+            employee_seminar_count = seminar_counts_df[seminar_counts_df['employee_id'] == selected_employee_id]['seminar_days'].values
 
             if len(employee_seminar_count) > 0:
-                st.metric(f"{selected_employee}'s Seminar Days", int(employee_seminar_count[0]))
+                st.metric(f"{selected_employee_name}'s Seminar Days", int(employee_seminar_count[0]))
 
         st.markdown("---")
 
@@ -1119,11 +1143,10 @@ elif page == "Schedule Seminars":
 
             if not month_seminar_records.empty:
                 calendar_df = month_seminar_records.copy()
+                calendar_df['Employee'] = calendar_df['employee_id'].apply(get_employee_name_by_id)
                 calendar_df = calendar_df.sort_values('date')
-                calendar_df['date'] = calendar_df['date'].dt.strftime('%Y-%m-%d')
-                calendar_df = calendar_df.rename(columns={
-                    'employee_name': 'Employee',
-                    'date': 'Date',
+                calendar_df['Date'] = calendar_df['date'].dt.strftime('%Y-%m-%d')
+                calendar_df = calendar_df[['Employee', 'Date', 'status', 'seminar_name']].rename(columns={
                     'status': 'Status',
                     'seminar_name': 'Seminar Name'
                 })
@@ -1205,18 +1228,18 @@ elif page == "Manage Employees":
                     elif edited_id != selected_emp['id'] and any(emp['id'] == edited_id for emp in employees):
                         st.error("❌ Employee ID already exists")
                     else:
-                        # Update WFH, AL, and Seminar records if name changed
-                        if edited_name != selected_emp['name']:
+                        # Update WFH, AL, and Seminar records if ID changed
+                        if edited_id != selected_emp['id']:
                             df_wfh = load_wfh_records()
-                            df_wfh.loc[df_wfh['employee_name'] == selected_emp['name'], 'employee_name'] = edited_name
+                            df_wfh.loc[df_wfh['employee_id'] == selected_emp['id'], 'employee_id'] = edited_id
                             save_wfh_records(df_wfh)
 
                             df_al = load_annual_leave_records()
-                            df_al.loc[df_al['employee_name'] == selected_emp['name'], 'employee_name'] = edited_name
+                            df_al.loc[df_al['employee_id'] == selected_emp['id'], 'employee_id'] = edited_id
                             save_annual_leave_records(df_al)
 
                             df_seminar = load_seminar_records()
-                            df_seminar.loc[df_seminar['employee_name'] == selected_emp['name'], 'employee_name'] = edited_name
+                            df_seminar.loc[df_seminar['employee_id'] == selected_emp['id'], 'employee_id'] = edited_id
                             save_seminar_records(df_seminar)
 
                         # Update employee record
@@ -1245,24 +1268,29 @@ elif page == "Manage Employees":
             if st.button("🗑️ Remove Employee", type="secondary"):
                 # Extract the employee name from the display string
                 emp_name = employee_to_remove.split(" (ID:")[0]
-                employees = [emp for emp in employees if emp['name'] != emp_name]
-                save_employees(employees)
+                # Find the employee to get their ID
+                emp_to_remove = next((emp for emp in employees if emp['name'] == emp_name), None)
+                if emp_to_remove:
+                    emp_id = emp_to_remove['id']
 
-                # Also remove their WFH, AL, and Seminar records
-                df = load_wfh_records()
-                df = df[df['employee_name'] != emp_name]
-                save_wfh_records(df)
+                    employees = [emp for emp in employees if emp['name'] != emp_name]
+                    save_employees(employees)
 
-                df_al = load_annual_leave_records()
-                df_al = df_al[df_al['employee_name'] != emp_name]
-                save_annual_leave_records(df_al)
+                    # Also remove their WFH, AL, and Seminar records by employee_id
+                    df = load_wfh_records()
+                    df = df[df['employee_id'] != emp_id]
+                    save_wfh_records(df)
 
-                df_seminar = load_seminar_records()
-                df_seminar = df_seminar[df_seminar['employee_name'] != emp_name]
-                save_seminar_records(df_seminar)
+                    df_al = load_annual_leave_records()
+                    df_al = df_al[df_al['employee_id'] != emp_id]
+                    save_annual_leave_records(df_al)
 
-                st.success(f"✅ Removed {employee_to_remove}")
-                st.rerun()
+                    df_seminar = load_seminar_records()
+                    df_seminar = df_seminar[df_seminar['employee_id'] != emp_id]
+                    save_seminar_records(df_seminar)
+
+                    st.success(f"✅ Removed {employee_to_remove}")
+                    st.rerun()
         else:
             st.info("No employees to remove")
     
@@ -1339,7 +1367,7 @@ elif page == "Reports":
                     st.metric("Total WFH Days", len(period_records))
                 
                 with col_b:
-                    unique_employees = period_records['employee_name'].nunique()
+                    unique_employees = period_records['employee_id'].nunique()
                     st.metric("Employees Using WFH", unique_employees)
                 
                 with col_c:
@@ -1351,19 +1379,20 @@ elif page == "Reports":
                 # Detailed breakdown
                 st.subheader("Detailed Breakdown by Employee")
 
-                employee_stats = period_records.groupby('employee_name').agg({
+                employee_stats = period_records.groupby('employee_id').agg({
                     'date': 'count'
                 }).reset_index()
-                employee_stats.columns = ['Employee', 'WFH Days']
+                employee_stats.columns = ['employee_id', 'WFH Days']
                 employee_stats = employee_stats.sort_values('WFH Days', ascending=False)
 
-                # Add employees with 0 days and include IDs
+                # Add employees with 0 days and include names and IDs
                 all_emp = pd.DataFrame([
-                    {'Employee': emp['name'], 'Employee ID': emp['id']}
+                    {'employee_id': emp['id'], 'Employee': emp['name'], 'Employee ID': emp['id']}
                     for emp in employees
                 ])
-                employee_stats = all_emp.merge(employee_stats, on='Employee', how='left').fillna(0)
+                employee_stats = all_emp.merge(employee_stats, on='employee_id', how='left').fillna(0)
                 employee_stats['WFH Days'] = employee_stats['WFH Days'].astype(int)
+                employee_stats = employee_stats[['Employee', 'Employee ID', 'WFH Days']]
 
                 # Use a container with limited width (40% of page)
                 col1, col2 = st.columns([2, 3])
@@ -1410,6 +1439,7 @@ elif page == "Reports":
 
                 # Add day of week to period records
                 period_records_copy = period_records.copy()
+                period_records_copy['employee_name'] = period_records_copy['employee_id'].apply(get_employee_name_by_id)
                 period_records_copy['day_of_week'] = period_records_copy['date'].dt.day_name()
 
                 # Create pivot table: employees vs days of week (workdays only)
@@ -1486,7 +1516,7 @@ elif page == "Reports":
 
             # Count scheduled leave days
             if not al_df.empty:
-                emp_al_records = al_df[al_df['employee_name'] == emp_name]
+                emp_al_records = al_df[al_df['employee_id'] == emp_id]
                 scheduled_days = len(emp_al_records)
             else:
                 scheduled_days = 0
@@ -1601,7 +1631,7 @@ elif page == "Reports":
                     st.metric("Unique Seminars", unique_seminars)
 
                 with col_sem_c:
-                    unique_attendees = period_seminar_records['employee_name'].nunique()
+                    unique_attendees = period_seminar_records['employee_id'].nunique()
                     st.metric("Employees Attending", unique_attendees)
 
                 st.markdown("---")
@@ -1609,19 +1639,20 @@ elif page == "Reports":
                 # Seminar attendance breakdown
                 st.subheader("Seminar Attendance by Employee")
 
-                seminar_stats = period_seminar_records.groupby('employee_name').agg({
+                seminar_stats = period_seminar_records.groupby('employee_id').agg({
                     'date': 'count'
                 }).reset_index()
-                seminar_stats.columns = ['Employee', 'Seminar Days']
+                seminar_stats.columns = ['employee_id', 'Seminar Days']
                 seminar_stats = seminar_stats.sort_values('Seminar Days', ascending=False)
 
                 # Add employees with 0 days
                 all_emp_seminar = pd.DataFrame([
-                    {'Employee': emp['name'], 'Employee ID': emp['id']}
+                    {'employee_id': emp['id'], 'Employee': emp['name'], 'Employee ID': emp['id']}
                     for emp in employees
                 ])
-                seminar_stats = all_emp_seminar.merge(seminar_stats, on='Employee', how='left').fillna(0)
+                seminar_stats = all_emp_seminar.merge(seminar_stats, on='employee_id', how='left').fillna(0)
                 seminar_stats['Seminar Days'] = seminar_stats['Seminar Days'].astype(int)
+                seminar_stats = seminar_stats[['Employee', 'Employee ID', 'Seminar Days']]
 
                 # Use a container with limited width (40% of page)
                 col1, col2 = st.columns([2, 3])
@@ -1642,10 +1673,9 @@ elif page == "Reports":
                 st.subheader("Seminar Details")
 
                 seminar_details = period_seminar_records.copy()
-                seminar_details['date'] = seminar_details['date'].dt.strftime('%Y-%m-%d')
-                seminar_details = seminar_details.rename(columns={
-                    'employee_name': 'Employee',
-                    'date': 'Date',
+                seminar_details['Employee'] = seminar_details['employee_id'].apply(get_employee_name_by_id)
+                seminar_details['Date'] = seminar_details['date'].dt.strftime('%Y-%m-%d')
+                seminar_details = seminar_details[['Employee', 'Date', 'seminar_name', 'status']].rename(columns={
                     'seminar_name': 'Seminar Name',
                     'status': 'Status'
                 })
