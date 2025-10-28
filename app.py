@@ -8,6 +8,9 @@ import os
 from pathlib import Path
 import hashlib
 
+# Application version
+APP_VERSION = "2.0.0"
+
 # Page configuration
 st.set_page_config(page_title="Business Analytics Team Scheduler", layout="wide", page_icon="📊")
 
@@ -424,6 +427,10 @@ with st.sidebar:
     if not df_records.empty:
         future_wfh = df_records[df_records['date'] >= pd.to_datetime(datetime.now().date())]
         st.metric("Upcoming WFH Days", len(future_wfh))
+
+    # Display version at the bottom of sidebar
+    st.markdown("---")
+    st.markdown(f"<div style='text-align: center; color: gray; font-size: 0.8em;'>v{APP_VERSION}</div>", unsafe_allow_html=True)
 
 # Change Password Dialog
 if 'show_change_password' not in st.session_state:
