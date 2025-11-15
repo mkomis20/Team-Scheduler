@@ -20,7 +20,7 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Data files (if you have sensitive data)
+# Data files - DO NOT SYNC (contains sensitive employee data)
+wfh_data/
 *.csv
 *.json
-!wfh_data/employees.json
