@@ -61,27 +61,48 @@ def save_leave_balances(df):
 
 # Get leave balance for an employee
 def get_leave_balance(employee_id):
+    employee_id = str(employee_id).strip()
     df = load_leave_balances()
-    if not df.empty and employee_id in df['employee_id'].values:
-        return df[df['employee_id'] == employee_id]['annual_leave_balance'].values[0]
+    if not df.empty:
+        # Convert all IDs to string and strip whitespace for comparison
+        df_ids_clean = df['employee_id'].astype(str).str.strip()
+        if employee_id in df_ids_clean.values:
+            return int(df[df_ids_clean == employee_id]['annual_leave_balance'].values[0])
     return 20  # Default balance
 
 # Set leave balance for an employee
 def set_leave_balance(employee_id, balance):
-    df = load_leave_balances()
-    # Convert balance to int if it isn't already
-    balance = int(balance)
+    try:
+        # Ensure employee_id is always a string
+        employee_id = str(employee_id).strip()
+        balance = int(balance)
 
-    if not df.empty and employee_id in df['employee_id'].values:
-        # Use a copy to avoid SettingWithCopyWarning
-        df = df.copy()
-        df.loc[df['employee_id'] == employee_id, 'annual_leave_balance'] = balance
-    else:
-        # Add new record
-        new_record = pd.DataFrame({'employee_id': [employee_id], 'annual_leave_balance': [balance]})
-        df = pd.concat([df, new_record], ignore_index=True)
+        df = load_leave_balances()
 
-    save_leave_balances(df)
+        # Check if employee exists using case-insensitive and whitespace-tolerant comparison
+        employee_exists = False
+        if not df.empty:
+            # Convert all IDs to string and strip whitespace for comparison
+            df_ids_clean = df['employee_id'].astype(str).str.strip()
+            employee_exists = employee_id in df_ids_clean.values
+
+        if employee_exists:
+            # Use a copy to avoid SettingWithCopyWarning
+            df = df.copy()
+            # Update using the cleaned employee_id
+            df.loc[df['employee_id'].astype(str).str.strip() == employee_id, 'annual_leave_balance'] = balance
+        else:
+            # Add new record
+            new_record = pd.DataFrame({'employee_id': [employee_id], 'annual_leave_balance': [balance]})
+            df = pd.concat([df, new_record], ignore_index=True)
+
+        save_leave_balances(df)
+        return True
+    except Exception as e:
+        import sys
+        print(f"ERROR in set_leave_balance: {e}", file=sys.stderr)
+        sys.stderr.flush()
+        return False
 
 # Initialize data files
 def init_data_files():
@@ -1494,10 +1515,15 @@ elif page == "Manage Employees":
                             df_balances.loc[df_balances['employee_id'] == old_id, 'employee_id'] = edited_id
                             save_leave_balances(df_balances)
 
-                        set_leave_balance(edited_id, edited_leave)
-
-                        st.success(f"✅ Updated employee to {edited_name} (ID: {edited_id}, Role: {edited_role}, Leave: {edited_leave} days)")
-                        st.rerun()
+                        # Update leave balance and verify it was saved
+                        success = set_leave_balance(edited_id, edited_leave)
+                        if success:
+                            st.success(f"✅ Updated employee to {edited_name} (ID: {edited_id}, Role: {edited_role}, Leave: {edited_leave} days)")
+                            import time
+                            time.sleep(0.2)  # Small delay to ensure file is flushed
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Failed to update leave balance. Please try again.")
         else:
             st.info("No employees to edit")
 
