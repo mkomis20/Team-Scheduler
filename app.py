@@ -196,9 +196,15 @@ def load_employees():
             if leave_balances_to_migrate:
                 df_existing = load_leave_balances()
                 df_new = pd.DataFrame(leave_balances_to_migrate)
-                # Merge with existing, updating if employee_id already exists
-                df_merged = pd.concat([df_existing, df_new]).drop_duplicates(subset=['employee_id'], keep='last')
-                save_leave_balances(df_merged)
+                # IMPORTANT: Only add new records that don't already exist in CSV
+                # Don't overwrite existing CSV values with old JSON values
+                # This prevents the migration from overwriting updated balances
+                for _, new_row in df_new.iterrows():
+                    emp_id = new_row['employee_id']
+                    # Only add if employee_id doesn't already exist in CSV
+                    if emp_id not in df_existing['employee_id'].values:
+                        df_existing = pd.concat([df_existing, pd.DataFrame([new_row])], ignore_index=True)
+                save_leave_balances(df_existing)
 
             if needs_save:
                 save_employees(employees)
