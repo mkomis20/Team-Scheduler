@@ -9,7 +9,16 @@ from pathlib import Path
 import hashlib
 
 # Application version
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.3 - Sunday 15/11/2025"
+
+# Define all available screens
+ALL_SCREENS = ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees", "Configure Roles"]
+
+# Default role permissions (can be customized per user)
+DEFAULT_ROLE_PERMISSIONS = {
+    "Admin": ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees", "Configure Roles"],
+    "User": ["Dashboard", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars"]
+}
 
 # Page configuration
 st.set_page_config(page_title="Business Analytics Team Scheduler", layout="wide", page_icon="📊")
@@ -21,6 +30,19 @@ EMPLOYEES_FILE = DATA_DIR / "employees.json"
 WFH_RECORDS_FILE = DATA_DIR / "wfh_records.csv"
 ANNUAL_LEAVE_RECORDS_FILE = DATA_DIR / "annual_leave_records.csv"
 SEMINAR_RECORDS_FILE = DATA_DIR / "seminar_records.csv"
+ROLE_PERMISSIONS_FILE = DATA_DIR / "role_permissions.json"
+
+# Load role permissions
+def load_role_permissions():
+    if ROLE_PERMISSIONS_FILE.exists():
+        with open(ROLE_PERMISSIONS_FILE, 'r') as f:
+            return json.load(f)
+    return DEFAULT_ROLE_PERMISSIONS.copy()
+
+# Save role permissions
+def save_role_permissions(permissions):
+    with open(ROLE_PERMISSIONS_FILE, 'w') as f:
+        json.dump(permissions, f, indent=2)
 
 # Initialize data files
 def init_data_files():
@@ -39,6 +61,9 @@ def init_data_files():
     if not SEMINAR_RECORDS_FILE.exists():
         df = pd.DataFrame(columns=['employee_id', 'date', 'status', 'seminar_name'])
         df.to_csv(SEMINAR_RECORDS_FILE, index=False)
+
+    if not ROLE_PERMISSIONS_FILE.exists():
+        save_role_permissions(DEFAULT_ROLE_PERMISSIONS.copy())
 
 # Hash password
 def hash_password(password):
@@ -59,13 +84,23 @@ def load_employees():
             save_employees(employees)
         # Handle format without password and role
         if employees:
+            needs_save = False
             for emp in employees:
                 if 'password' not in emp:
                     emp['password'] = hash_password('1234')  # Default password
+                    needs_save = True
                 if 'role' not in emp:
                     # Set Marios Komis as admin, others as users
                     emp['role'] = 'Admin' if emp['name'] == 'Marios Komis' else 'User'
-            save_employees(employees)
+                    needs_save = True
+                # Handle format without screen_permissions
+                if 'screen_permissions' not in emp:
+                    role = emp.get('role', 'User')
+                    role_permissions = load_role_permissions()
+                    emp['screen_permissions'] = role_permissions.get(role, [])
+                    needs_save = True
+            if needs_save:
+                save_employees(employees)
         return employees
 
 # Save employees
@@ -84,6 +119,40 @@ def get_employee_name_by_id(employee_id):
     employees = load_employees()
     emp = next((e for e in employees if e['id'] == employee_id), None)
     return emp['name'] if emp else f"Unknown ({employee_id})"
+
+# Helper function to get allowed screens for a user
+def get_allowed_screens(employee_name):
+    employees = load_employees()
+    emp = next((e for e in employees if e['name'] == employee_name), None)
+    if emp:
+        # If employee has custom screen permissions, use those
+        if 'screen_permissions' in emp:
+            return emp['screen_permissions']
+        # Otherwise use default permissions based on role
+        role = emp.get('role', 'User')
+        role_permissions = load_role_permissions()
+        return role_permissions.get(role, [])
+    return []
+
+# Helper function to check if a user can manage another user's records
+def can_manage_user(current_user_name, target_user_name):
+    """
+    Check if the current user can manage records for the target user.
+    - Admins can manage all users
+    - Regular users can only manage their own records
+    """
+    employees = load_employees()
+    current_user = next((e for e in employees if e['name'] == current_user_name), None)
+
+    if not current_user:
+        return False
+
+    # Admins can manage anyone
+    if current_user.get('role') == 'Admin':
+        return True
+
+    # Users can only manage themselves
+    return current_user_name == target_user_name
 
 # Load WFH records
 def load_wfh_records():
@@ -382,8 +451,6 @@ if not st.session_state.logged_in:
             else:
                 st.error("❌ User not found")
 
-        st.info("ℹ️ Default password for new users is: **1234**")
-
     st.stop()
 
 # User is logged in - show the application
@@ -410,13 +477,18 @@ with st.sidebar:
 
     st.header("📋 Navigation")
 
-    # Show different menus based on role
-    if st.session_state.user_role == "Admin":
-        page = st.radio("Menu", ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees"])
-    else:
-        # Users only see Dashboard
-        page = st.radio("Menu", ["Dashboard"])
-        st.info("ℹ️ Contact admin for access to other features")
+    # Get allowed screens for the logged-in user
+    allowed_screens = get_allowed_screens(st.session_state.user_name)
+
+    if not allowed_screens:
+        st.error("❌ No screens assigned to your role. Contact admin.")
+        st.stop()
+
+    page = st.radio("Menu", allowed_screens)
+
+    # Show info if user doesn't have all screens
+    if len(allowed_screens) < len(ALL_SCREENS):
+        st.info("ℹ️ Contact admin to request additional screen access")
 
     st.markdown("---")
     st.markdown("### Quick Stats")
@@ -494,6 +566,10 @@ if page == "Dashboard":
         # Initialize calendar month offset in session state
         if 'calendar_month_offset' not in st.session_state:
             st.session_state.calendar_month_offset = 0
+
+        # Initialize occupancy month offset in session state
+        if 'occupancy_month_offset' not in st.session_state:
+            st.session_state.occupancy_month_offset = 0
 
         # WFH, AL & Seminar Schedule - Calendar View
         col_title, col_nav = st.columns([3, 1])
@@ -703,11 +779,30 @@ if page == "Dashboard":
         # Charts section
         st.markdown("---")
 
-        # Office Occupancy
-        st.subheader("Office Occupancy (Next 30 Days)")
+        # Office Occupancy with scrolling
+        col_occ_title, col_occ_nav = st.columns([3, 1])
+        with col_occ_title:
+            st.subheader("Office Occupancy")
+        with col_occ_nav:
+            col_occ_left, col_occ_center, col_occ_right = st.columns([1, 2, 1])
+            with col_occ_left:
+                if st.button("◀", key="occ_prev", help="Previous month"):
+                    st.session_state.occupancy_month_offset -= 1
+                    st.rerun()
+            with col_occ_center:
+                # Calculate the viewing month based on offset
+                occ_viewing_date = today + timedelta(days=30 * st.session_state.occupancy_month_offset)
+                st.markdown(f"**{occ_viewing_date.strftime('%B %Y')}**")
+            with col_occ_right:
+                if st.button("▶", key="occ_next", help="Next month"):
+                    st.session_state.occupancy_month_offset += 1
+                    st.rerun()
 
-        end_date = today + timedelta(days=30)
-        occupancy = get_office_occupancy(today, end_date)
+        # Calculate date range for occupancy (30 days from offset month)
+        occ_viewing_date = today + timedelta(days=30 * st.session_state.occupancy_month_offset)
+        occ_start_date = occ_viewing_date
+        occ_end_date = occ_start_date + timedelta(days=29)
+        occupancy = get_office_occupancy(occ_start_date, occ_end_date)
 
         if not occupancy.empty:
             # Create stacked area chart
@@ -768,22 +863,36 @@ if page == "Dashboard":
             if not low_occupancy.empty:
                 st.warning(f"⚠️ **Low office occupancy alert:** {len(low_occupancy)} day(s) with less than 30% in office")
         else:
-            st.info("No WFH, Annual Leave, or Seminar days scheduled in the next 30 days")
+            st.info(f"No WFH, Annual Leave, or Seminar days scheduled in {occ_viewing_date.strftime('%B %Y')}")
 
 # SCHEDULE WFH PAGE
 elif page == "Schedule WFH":
     st.title("📊 Business Analytics Team Scheduler - Schedule WFH")
     st.markdown("---")
-    
+
     if not employees:
         st.warning("⚠️ No employees added yet. Go to 'Manage Employees' to add team members.")
     else:
         col1, col2 = st.columns([2, 1])
-        
+
         with col1:
             st.subheader("Add WFH Day(s)")
 
-            employee_options = [f"{emp['name']} (ID: {emp['id']})" for emp in employees]
+            # Get current user role
+            current_user_role = st.session_state.user_role
+
+            # If user is not admin, filter employees to only show themselves
+            if current_user_role != "Admin":
+                # Regular users can only manage their own WFH
+                filterable_employees = [emp for emp in employees if emp['name'] == st.session_state.user_name]
+                if not filterable_employees:
+                    st.error("❌ Your account is not found in the employee list.")
+                    st.stop()
+            else:
+                # Admins can see all employees
+                filterable_employees = employees
+
+            employee_options = [f"{emp['name']} (ID: {emp['id']})" for emp in filterable_employees]
             selected_employee_display = st.selectbox("Select Employee", employee_options)
             # Extract employee name and ID from display string
             selected_employee_name = selected_employee_display.split(" (ID:")[0]
@@ -902,7 +1011,21 @@ elif page == "Schedule Annual Leave":
         with col1:
             st.subheader("Schedule Annual Leave")
 
-            employee_options = [f"{emp['name']} (ID: {emp['id']})" for emp in employees]
+            # Get current user role
+            current_user_role = st.session_state.user_role
+
+            # If user is not admin, filter employees to only show themselves
+            if current_user_role != "Admin":
+                # Regular users can only manage their own Annual Leave
+                filterable_employees = [emp for emp in employees if emp['name'] == st.session_state.user_name]
+                if not filterable_employees:
+                    st.error("❌ Your account is not found in the employee list.")
+                    st.stop()
+            else:
+                # Admins can see all employees
+                filterable_employees = employees
+
+            employee_options = [f"{emp['name']} (ID: {emp['id']})" for emp in filterable_employees]
             selected_employee_display = st.selectbox("Select Employee", employee_options, key="al_employee")
             # Extract employee name and ID from display string
             selected_employee_name = selected_employee_display.split(" (ID:")[0]
@@ -1053,7 +1176,21 @@ elif page == "Schedule Seminars":
         with col1:
             st.subheader("Schedule Seminar Attendance")
 
-            employee_options = [f"{emp['name']} (ID: {emp['id']})" for emp in employees]
+            # Get current user role
+            current_user_role = st.session_state.user_role
+
+            # If user is not admin, filter employees to only show themselves
+            if current_user_role != "Admin":
+                # Regular users can only manage their own seminars
+                filterable_employees = [emp for emp in employees if emp['name'] == st.session_state.user_name]
+                if not filterable_employees:
+                    st.error("❌ Your account is not found in the employee list.")
+                    st.stop()
+            else:
+                # Admins can see all employees
+                filterable_employees = employees
+
+            employee_options = [f"{emp['name']} (ID: {emp['id']})" for emp in filterable_employees]
             selected_employee_display = st.selectbox("Select Employee", employee_options, key="seminar_employee")
             # Extract employee name and ID from display string
             selected_employee_name = selected_employee_display.split(" (ID:")[0]
@@ -1181,6 +1318,17 @@ elif page == "Manage Employees":
         new_password = st.text_input("Password", value="1234", type="password", key="new_password")
         new_role = st.selectbox("Role", ["User", "Admin"])
 
+        # Screen permissions based on role
+        st.write("**Screen Permissions:**")
+        role_perms = load_role_permissions()
+        default_screens = role_perms.get(new_role, [])
+        selected_screens = st.multiselect(
+            "Select screens to allow (defaults based on role):",
+            options=ALL_SCREENS,
+            default=default_screens,
+            key="new_emp_screens"
+        )
+
         if st.button("➕ Add Employee", type="primary"):
             if new_employee and new_employee_id and new_password:
                 if len(new_employee_id) != 4:
@@ -1195,7 +1343,8 @@ elif page == "Manage Employees":
                         'id': new_employee_id,
                         'annual_leave_balance': new_annual_leave,
                         'password': hash_password(new_password),
-                        'role': new_role
+                        'role': new_role,
+                        'screen_permissions': selected_screens
                     })
                     save_employees(employees)
                     st.success(f"✅ Added {new_employee} (ID: {new_employee_id}, Role: {new_role}, Leave: {new_annual_leave} days)")
@@ -1224,6 +1373,17 @@ elif page == "Manage Employees":
                 edited_leave = st.number_input("Annual Leave Balance (days)", min_value=0, max_value=365, value=selected_emp.get('annual_leave_balance', 20), step=1, key=f"edit_leave_{selected_emp_name}")
                 edited_password = st.text_input("New Password (leave empty to keep current)", type="password", key=f"edit_password_{selected_emp_name}")
                 edited_role = st.selectbox("Role", ["User", "Admin"], index=0 if selected_emp.get('role', 'User') == 'User' else 1, key=f"edit_role_{selected_emp_name}")
+
+                # Screen permissions
+                st.write("**Screen Permissions:**")
+                role_perms_edit = load_role_permissions()
+                current_screens = selected_emp.get('screen_permissions', role_perms_edit.get(selected_emp.get('role', 'User'), []))
+                edited_screens = st.multiselect(
+                    "Select screens to allow:",
+                    options=ALL_SCREENS,
+                    default=current_screens,
+                    key=f"edit_screens_{selected_emp_name}"
+                )
 
                 if st.button("💾 Save Changes", type="primary", key="save_edit"):
                     if not edited_name or not edited_id:
@@ -1256,6 +1416,7 @@ elif page == "Manage Employees":
                                 emp['id'] = edited_id
                                 emp['annual_leave_balance'] = edited_leave
                                 emp['role'] = edited_role
+                                emp['screen_permissions'] = edited_screens
                                 # Update password only if new one is provided
                                 if edited_password:
                                     emp['password'] = hash_password(edited_password)
@@ -1720,6 +1881,71 @@ elif page == "Reports":
                 st.info("No seminar records found for the selected date range")
         else:
             st.info("No seminar records available")
+
+# CONFIGURE ROLES PAGE
+elif page == "Configure Roles":
+    st.title("📊 Business Analytics Team Scheduler - Configure Roles")
+    st.markdown("---")
+
+    # Check if user is Admin
+    if st.session_state.user_role != "Admin":
+        st.error("❌ Access Denied: Only Admins can configure roles")
+        st.stop()
+
+    st.subheader("Role Permissions Configuration")
+    st.write("Configure which screens are available for each role by default.")
+
+    # Load current role permissions
+    role_permissions = load_role_permissions()
+
+    # Create tabs for each role
+    roles = list(role_permissions.keys())
+    if roles:
+        tabs = st.tabs([f"🔑 {role}" for role in roles])
+
+        for idx, role in enumerate(roles):
+            with tabs[idx]:
+                st.write(f"**Configure screens for {role} role:**")
+
+                current_screens = role_permissions.get(role, [])
+                updated_screens = st.multiselect(
+                    f"Select screens for {role}:",
+                    options=ALL_SCREENS,
+                    default=current_screens,
+                    key=f"role_screens_{role}"
+                )
+
+                # Display current assignment
+                st.info(f"Currently assigned screens: **{', '.join(current_screens) if current_screens else 'None'}**")
+
+                # Save button for this role
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    if st.button(f"💾 Save {role} Permissions", type="primary", key=f"save_role_{role}"):
+                        role_permissions[role] = updated_screens
+                        save_role_permissions(role_permissions)
+                        st.success(f"✅ {role} permissions updated successfully!")
+                        st.rerun()
+
+                st.markdown("---")
+
+        # Summary section
+        st.subheader("📋 Permissions Summary")
+        summary_data = []
+        for role in roles:
+            screens = role_permissions.get(role, [])
+            summary_data.append({
+                'Role': role,
+                'Screens': ', '.join(screens) if screens else 'None',
+                'Screen Count': len(screens)
+            })
+
+        summary_df = pd.DataFrame(summary_data)
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+        st.info("💡 **Note:** Individual users can have custom screen permissions that override their role's default permissions.")
+    else:
+        st.warning("⚠️ No roles configured yet.")
 
 # Footer
 st.markdown("---")

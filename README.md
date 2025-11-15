@@ -2,30 +2,33 @@
 
 A comprehensive Streamlit-based web application for managing team Work From Home (WFH) schedules, Annual Leave tracking, and Seminar attendance for the Business Analytics Team.
 
-## Recent Updates
+## Recent Updates (v2.1.3 - Sunday 15/11/2025)
 
 ### 🆕 Latest Features
 
-- **Month Navigation**: Calendar now supports browsing through different months with arrow buttons
-- **Date Range Selection**: Schedule multiple days at once for WFH, Annual Leave, and Seminars
-- **Conflict Detection**: System prevents overlapping entries - removes need to manually track conflicts
-- **Optimized UI**: Compact table layouts and combined page titles save screen space
-- **Enhanced Reports**: Fixed-width tables for professional appearance and better readability
+- **Role-Based Data Access Control**: Users can only manage their own WFH, Annual Leave, and Seminar entries. Admins can manage all users
+- **Configure Roles Screen**: New admin-only screen to manage default role permissions for each screen
+- **Persistent Role Configuration**: Role permissions saved to `role_permissions.json` and persist across sessions
+- **Enhanced User Permissions**: User role now has access to Schedule WFH, Annual Leave, and Seminars (own data only)
+- **Scrollable Office Occupancy**: Office occupancy chart now supports month navigation with arrow buttons
+- **Removed Default Password Hint**: Login screen no longer displays default password information for security
+- **Previous Updates**: Month Navigation for calendars, Date Range Selection, Conflict Detection, Optimized UI, Enhanced Reports
 
 ## Features
 
 ### User Authentication
 
 - Secure login system with password hashing (SHA-256)
-- Role-based access control (Admin/User roles)
+- Role-based access control with configurable permissions
 - Password change functionality
-- Default password for new users: `1234`
+- Default password for new users: `1234` (displayed only during employee creation)
 
 ### Dashboard
 
 - Interactive calendar view showing WFH, Annual Leave, and Seminar schedules
-- **Month navigation**: Browse previous and future months with arrow buttons ◀ ▶
+- **Month navigation**: Browse previous and future months with arrow buttons ◀ ▶ (calendar and occupancy chart)
 - 5-week calendar display starting from selected month
+- **Scrollable office occupancy**: Navigate through different months in occupancy chart with arrow buttons
 - Office occupancy visualization with stacked area charts
 - Low occupancy alerts (below 30% threshold)
 - Color-coded schedule indicators:
@@ -34,9 +37,12 @@ A comprehensive Streamlit-based web application for managing team Work From Home
   - Blue: Seminar attendance (S:)
   - Gray: Past events
 
-### WFH Scheduling (Admin Only)
+### WFH Scheduling
 
-- Schedule and remove WFH days for team members
+**User Access**: Users can schedule their own WFH days
+**Admin Access**: Can schedule WFH days for all team members
+
+- Schedule and remove WFH days
 - **Date range support**: Select single date or date range for batch scheduling
 - **Conflict detection**: Prevents overlapping entries with Annual Leave or Seminars
 - Monthly calendar view of WFH records
@@ -44,9 +50,12 @@ A comprehensive Streamlit-based web application for managing team Work From Home
 - Warnings for low office occupancy
 - Employee-specific WFH day counters
 
-### Annual Leave Management (Admin Only)
+### Annual Leave Management
 
-- Schedule and track annual leave for all employees
+**User Access**: Users can schedule their own annual leave
+**Admin Access**: Can schedule annual leave for all team members
+
+- Schedule and track annual leave
 - **Date range support**: Select single date or date range for batch scheduling
 - **Conflict detection**: Prevents overlapping entries with WFH or Seminars
 - **Balance warnings**: Alerts when scheduling exceeds available leave balance
@@ -55,9 +64,12 @@ A comprehensive Streamlit-based web application for managing team Work From Home
 - Monthly calendar view of annual leave records
 - Automatic calculation of remaining leave days
 
-### Seminar Attendance Tracking (Admin Only)
+### Seminar Attendance Tracking
 
-- Schedule and track team member attendance at seminars and training events
+**User Access**: Users can register themselves for seminars
+**Admin Access**: Can register any team member for seminars
+
+- Schedule and track seminar attendance
 - **Date range support**: Perfect for multi-day conferences and training programs
 - **Conflict detection**: Prevents overlapping entries with WFH or Annual Leave
 - Record seminar names and dates
@@ -70,10 +82,19 @@ A comprehensive Streamlit-based web application for managing team Work From Home
 - Add new employees with customizable:
   - Name and 4-character Employee ID
   - Annual leave balance (default: 20 days)
-  - Password and role assignment
-- Edit existing employee information
+  - Password, role assignment, and screen permissions
+- Edit existing employee information including screen permissions
 - Remove employees (cascades to WFH/AL/Seminar records)
 - View complete team roster with leave balances
+
+### Configure Roles (Admin Only)
+
+- Manage default role permissions for Admin and User roles
+- Configure which screens are available for each role
+- View current permissions for all roles
+- Customize permissions for specific roles
+- Individual user permissions override role defaults
+- Persistent configuration saved across sessions
 
 ### Reports & Analytics (Admin Only)
 
@@ -130,20 +151,26 @@ The application will open in your default web browser at `http://localhost:8501`
 2. **Default Credentials**: New users have password `1234` (change immediately after first login)
 3. **Admin Access**: The first user "Marios Team" is set as Admin by default in the code
 
-### User Roles
+### User Roles & Permissions
 
-**Admin Role:**
+**Admin Role (Default Permissions):**
 
-- Full access to all features
-- Can schedule WFH, Annual Leave, and Seminars
-- Can manage employees (add, edit, remove)
+- Access to: Dashboard, Reports, Schedule WFH, Schedule Annual Leave, Schedule Seminars, Manage Employees, Configure Roles
+- Can schedule WFH, Annual Leave, and Seminars for any team member
+- Can manage employees (add, edit, remove) and customize their permissions
 - Can view detailed reports and analytics
+- Can configure default role permissions
 
-**User Role:**
+**User Role (Default Permissions):**
 
-- Read-only access to Dashboard
-- Can view team schedules, office occupancy, and seminar attendance
-- Cannot modify schedules or manage employees
+- Access to: Dashboard, Schedule WFH, Schedule Annual Leave, Schedule Seminars
+- Can schedule WFH, Annual Leave, and Seminars for themselves only
+- Cannot view Reports or manage employees
+- Cannot access Configure Roles
+
+**Custom Permissions:**
+- Admins can customize screen permissions for individual users
+- Individual user permissions override their role's default permissions
 
 ## Data Storage
 
@@ -151,13 +178,14 @@ The application uses local file storage with the following structure:
 
 ```
 wfh_data/
-├── employees.json           # Employee information (names, IDs, passwords, roles, leave balances)
-├── wfh_records.csv          # Work From Home schedule records
-├── annual_leave_records.csv # Annual Leave schedule records
-└── seminar_records.csv      # Seminar attendance records (with seminar names)
+├── employees.json             # Employee information (names, IDs, passwords, roles, screen permissions, leave balances)
+├── wfh_records.csv            # Work From Home schedule records
+├── annual_leave_records.csv   # Annual Leave schedule records
+├── seminar_records.csv        # Seminar attendance records (with seminar names)
+└── role_permissions.json      # Default role permissions configuration (new in v2.1.3)
 ```
 
-These files are automatically created on first run.
+These files are automatically created on first run. The `role_permissions.json` file stores the default screen permissions for each role.
 
 ## Key Functionalities
 
