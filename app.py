@@ -31,6 +31,7 @@ WFH_RECORDS_FILE = DATA_DIR / "wfh_records.csv"
 ANNUAL_LEAVE_RECORDS_FILE = DATA_DIR / "annual_leave_records.csv"
 SEMINAR_RECORDS_FILE = DATA_DIR / "seminar_records.csv"
 ROLE_PERMISSIONS_FILE = DATA_DIR / "role_permissions.json"
+LEAVE_BALANCES_FILE = DATA_DIR / "leave_balances.csv"
 
 # Load role permissions
 def load_role_permissions():
@@ -43,6 +44,44 @@ def load_role_permissions():
 def save_role_permissions(permissions):
     with open(ROLE_PERMISSIONS_FILE, 'w') as f:
         json.dump(permissions, f, indent=2)
+
+# Load leave balances
+def load_leave_balances():
+    if LEAVE_BALANCES_FILE.exists():
+        df = pd.read_csv(LEAVE_BALANCES_FILE, dtype={'employee_id': str, 'annual_leave_balance': int})
+        return df
+    return pd.DataFrame(columns=['employee_id', 'annual_leave_balance'])
+
+# Save leave balances
+def save_leave_balances(df):
+    # Ensure correct data types before saving
+    df['employee_id'] = df['employee_id'].astype(str)
+    df['annual_leave_balance'] = df['annual_leave_balance'].astype(int)
+    df.to_csv(LEAVE_BALANCES_FILE, index=False)
+
+# Get leave balance for an employee
+def get_leave_balance(employee_id):
+    df = load_leave_balances()
+    if not df.empty and employee_id in df['employee_id'].values:
+        return df[df['employee_id'] == employee_id]['annual_leave_balance'].values[0]
+    return 20  # Default balance
+
+# Set leave balance for an employee
+def set_leave_balance(employee_id, balance):
+    df = load_leave_balances()
+    # Convert balance to int if it isn't already
+    balance = int(balance)
+
+    if not df.empty and employee_id in df['employee_id'].values:
+        # Use a copy to avoid SettingWithCopyWarning
+        df = df.copy()
+        df.loc[df['employee_id'] == employee_id, 'annual_leave_balance'] = balance
+    else:
+        # Add new record
+        new_record = pd.DataFrame({'employee_id': [employee_id], 'annual_leave_balance': [balance]})
+        df = pd.concat([df, new_record], ignore_index=True)
+
+    save_leave_balances(df)
 
 # Initialize data files
 def init_data_files():
@@ -65,6 +104,9 @@ def init_data_files():
     if not ROLE_PERMISSIONS_FILE.exists():
         save_role_permissions(DEFAULT_ROLE_PERMISSIONS.copy())
 
+    if not LEAVE_BALANCES_FILE.exists():
+        save_leave_balances(pd.DataFrame(columns=['employee_id', 'annual_leave_balance']))
+
 # Hash password
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -85,6 +127,7 @@ def load_employees():
         # Handle format without password and role
         if employees:
             needs_save = False
+            leave_balances_to_migrate = []
             for emp in employees:
                 if 'password' not in emp:
                     emp['password'] = hash_password('1234')  # Default password
@@ -99,6 +142,23 @@ def load_employees():
                     role_permissions = load_role_permissions()
                     emp['screen_permissions'] = role_permissions.get(role, [])
                     needs_save = True
+                # Migrate annual_leave_balance to CSV file
+                if 'annual_leave_balance' in emp:
+                    leave_balances_to_migrate.append({
+                        'employee_id': emp['id'],
+                        'annual_leave_balance': emp['annual_leave_balance']
+                    })
+                    del emp['annual_leave_balance']  # Remove from JSON
+                    needs_save = True
+
+            # Save migrated leave balances to CSV
+            if leave_balances_to_migrate:
+                df_existing = load_leave_balances()
+                df_new = pd.DataFrame(leave_balances_to_migrate)
+                # Merge with existing, updating if employee_id already exists
+                df_merged = pd.concat([df_existing, df_new]).drop_duplicates(subset=['employee_id'], keep='last')
+                save_leave_balances(df_merged)
+
             if needs_save:
                 save_employees(employees)
         return employees
@@ -1031,9 +1091,8 @@ elif page == "Schedule Annual Leave":
             selected_employee_name = selected_employee_display.split(" (ID:")[0]
             selected_employee_id = selected_employee_display.split("ID: ")[1].rstrip(")")
 
-            # Get employee's annual leave balance
-            selected_emp_obj = next((emp for emp in employees if emp['id'] == selected_employee_id), None)
-            leave_balance = selected_emp_obj.get('annual_leave_balance', 20) if selected_emp_obj else 20
+            # Get employee's annual leave balance from CSV
+            leave_balance = get_leave_balance(selected_employee_id)
 
             # Get scheduled leave days for this employee
             al_df = load_annual_leave_records()
@@ -1341,12 +1400,13 @@ elif page == "Manage Employees":
                     employees.append({
                         'name': new_employee,
                         'id': new_employee_id,
-                        'annual_leave_balance': new_annual_leave,
                         'password': hash_password(new_password),
                         'role': new_role,
                         'screen_permissions': selected_screens
                     })
                     save_employees(employees)
+                    # Save leave balance to separate CSV file
+                    set_leave_balance(new_employee_id, new_annual_leave)
                     st.success(f"✅ Added {new_employee} (ID: {new_employee_id}, Role: {new_role}, Leave: {new_annual_leave} days)")
                     st.rerun()
             else:
@@ -1364,13 +1424,16 @@ elif page == "Manage Employees":
             selected_emp = next((emp for emp in employees if emp['name'] == selected_emp_name), None)
 
             if selected_emp:
+                # Get current leave balance from CSV
+                current_leave_balance = get_leave_balance(selected_emp['id'])
+
                 # Display current values
-                st.info(f"**Current Name:** {selected_emp['name']}  \n**Current ID:** {selected_emp['id'] if selected_emp['id'] else 'Not Set'}  \n**Role:** {selected_emp.get('role', 'User')}  \n**Annual Leave:** {selected_emp.get('annual_leave_balance', 20)} days")
+                st.info(f"**Current Name:** {selected_emp['name']}  \n**Current ID:** {selected_emp['id'] if selected_emp['id'] else 'Not Set'}  \n**Role:** {selected_emp.get('role', 'User')}  \n**Annual Leave:** {current_leave_balance} days")
 
                 # Use unique keys based on employee name to reset fields when selection changes
                 edited_name = st.text_input("New Name", value=selected_emp['name'], key=f"edit_name_{selected_emp_name}")
                 edited_id = st.text_input("New ID (4 characters)", value=selected_emp['id'] if selected_emp['id'] else "", max_chars=4, key=f"edit_id_{selected_emp_name}")
-                edited_leave = st.number_input("Annual Leave Balance (days)", min_value=0, max_value=365, value=selected_emp.get('annual_leave_balance', 20), step=1, key=f"edit_leave_{selected_emp_name}")
+                edited_leave = st.number_input("Annual Leave Balance (days)", min_value=0, max_value=365, value=current_leave_balance, step=1, key=f"edit_leave_{selected_emp_name}")
                 edited_password = st.text_input("New Password (leave empty to keep current)", type="password", key=f"edit_password_{selected_emp_name}")
                 edited_role = st.selectbox("Role", ["User", "Admin"], index=0 if selected_emp.get('role', 'User') == 'User' else 1, key=f"edit_role_{selected_emp_name}")
 
@@ -1410,11 +1473,11 @@ elif page == "Manage Employees":
                             save_seminar_records(df_seminar)
 
                         # Update employee record
+                        old_id = selected_emp['id']
                         for emp in employees:
                             if emp['name'] == selected_emp['name']:
                                 emp['name'] = edited_name
                                 emp['id'] = edited_id
-                                emp['annual_leave_balance'] = edited_leave
                                 emp['role'] = edited_role
                                 emp['screen_permissions'] = edited_screens
                                 # Update password only if new one is provided
@@ -1423,6 +1486,16 @@ elif page == "Manage Employees":
                                 break
 
                         save_employees(employees)
+
+                        # Update leave balance in CSV
+                        if edited_id != old_id:
+                            # If ID changed, update the leave balance record
+                            df_balances = load_leave_balances()
+                            df_balances.loc[df_balances['employee_id'] == old_id, 'employee_id'] = edited_id
+                            save_leave_balances(df_balances)
+
+                        set_leave_balance(edited_id, edited_leave)
+
                         st.success(f"✅ Updated employee to {edited_name} (ID: {edited_id}, Role: {edited_role}, Leave: {edited_leave} days)")
                         st.rerun()
         else:
