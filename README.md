@@ -2,17 +2,15 @@
 
 A comprehensive Streamlit-based web application for managing team Work From Home (WFH) schedules, Annual Leave tracking, and Seminar attendance for the Business Analytics Team.
 
-## Recent Updates (v2.1.3 - Sunday 15/11/2025)
+## Recent Updates (v2.1.4 - Sunday 16/11/2025)
 
 ### 🆕 Latest Features
 
-- **Role-Based Data Access Control**: Users can only manage their own WFH, Annual Leave, and Seminar entries. Admins can manage all users
-- **Configure Roles Screen**: New admin-only screen to manage default role permissions for each screen
-- **Persistent Role Configuration**: Role permissions saved to `role_permissions.json` and persist across sessions
-- **Enhanced User Permissions**: User role now has access to Schedule WFH, Annual Leave, and Seminars (own data only)
-- **Scrollable Office Occupancy**: Office occupancy chart now supports month navigation with arrow buttons
-- **Removed Default Password Hint**: Login screen no longer displays default password information for security
-- **Previous Updates**: Month Navigation for calendars, Date Range Selection, Conflict Detection, Optimized UI, Enhanced Reports
+- **Backup & Export Screen**: New admin-only screen to backup and export all CSV data for record-keeping
+- **Individual and Bulk Export**: Export WFH records, Annual Leave, Seminars, and Leave Balances individually or as complete backup
+- **Timestamped Backups**: All exports include timestamps for version tracking and organization
+- **Fixed Leave Balance Persistence**: Resolved critical bug where migration code was overwriting updated balances
+- **Previous Updates**: Role-Based Access Control, Configure Roles, Enhanced Permissions, Scrollable Occupancy, Security improvements
 
 ## Features
 
@@ -114,6 +112,24 @@ A comprehensive Streamlit-based web application for managing team Work From Home
   - Seminar attendance per employee
 - CSV export functionality for WFH records
 
+### Backup & Export (Admin Only)
+
+- **Individual exports**: Download specific data types as CSV files
+  - Export WFH Records with full scheduling history
+  - Export Annual Leave Records with all leave entries
+  - Export Seminar Attendance Records with seminar names and dates
+  - Export Leave Balances for each employee
+- **Complete Backup**: Single-file backup containing all data
+  - Combines all records into one downloadable file
+  - Includes backup summary with record counts and timestamp
+  - Perfect for system backups and disaster recovery
+- **Timestamped Files**: All exports include date/time stamps for version control
+- **Recommended Use**:
+  - Daily backups for active teams
+  - Weekly backups for minimal activity
+  - Before system updates or migrations
+  - Regular testing of restoration procedures
+
 ## Installation
 
 ### Prerequisites
@@ -155,11 +171,12 @@ The application will open in your default web browser at `http://localhost:8501`
 
 **Admin Role (Default Permissions):**
 
-- Access to: Dashboard, Reports, Schedule WFH, Schedule Annual Leave, Schedule Seminars, Manage Employees, Configure Roles
+- Access to: Dashboard, Reports, Schedule WFH, Schedule Annual Leave, Schedule Seminars, Manage Employees, Configure Roles, Backup & Export
 - Can schedule WFH, Annual Leave, and Seminars for any team member
 - Can manage employees (add, edit, remove) and customize their permissions
 - Can view detailed reports and analytics
 - Can configure default role permissions
+- Can backup and export all system data for record-keeping and disaster recovery
 
 **User Role (Default Permissions):**
 

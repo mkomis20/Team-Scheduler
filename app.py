@@ -12,11 +12,11 @@ import hashlib
 APP_VERSION = "2.1.3 - Sunday 16/11/2025"
 
 # Define all available screens
-ALL_SCREENS = ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees", "Configure Roles"]
+ALL_SCREENS = ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees", "Configure Roles", "Backup & Export"]
 
 # Default role permissions (can be customized per user)
 DEFAULT_ROLE_PERMISSIONS = {
-    "Admin": ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees", "Configure Roles"],
+    "Admin": ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees", "Configure Roles", "Backup & Export"],
     "User": ["Dashboard", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars"]
 }
 
@@ -2084,6 +2084,182 @@ elif page == "Configure Roles":
         st.info("💡 **Note:** Individual users can have custom screen permissions that override their role's default permissions.")
     else:
         st.warning("⚠️ No roles configured yet.")
+
+# BACKUP & EXPORT PAGE
+elif page == "Backup & Export":
+    st.title("📊 Business Analytics Team Scheduler - Backup & Export")
+    st.markdown("---")
+
+    # Check if user is Admin
+    if st.session_state.user_role != "Admin":
+        st.error("❌ Access Denied: Only Admins can backup and export data")
+        st.stop()
+
+    st.subheader("📥 Backup & Export Data")
+    st.write("Export all application data files as CSV for backup and record-keeping purposes.")
+
+    # Create three columns for export options
+    col1, col2, col3 = st.columns(3)
+
+    # WFH Records Export
+    with col1:
+        st.write("**Work From Home Records**")
+        if st.button("📥 Export WFH Records", use_container_width=True, key="export_wfh"):
+            df_wfh = load_wfh_records()
+            csv_wfh = df_wfh.to_csv(index=False)
+            st.download_button(
+                label="⬇️ Download WFH_Records.csv",
+                data=csv_wfh,
+                file_name=f"WFH_Records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_wfh"
+            )
+            st.success(f"✅ WFH records ready for download ({len(df_wfh)} records)")
+
+    # Annual Leave Records Export
+    with col2:
+        st.write("**Annual Leave Records**")
+        if st.button("📥 Export Leave Records", use_container_width=True, key="export_al"):
+            df_al = load_annual_leave_records()
+            csv_al = df_al.to_csv(index=False)
+            st.download_button(
+                label="⬇️ Download Leave_Records.csv",
+                data=csv_al,
+                file_name=f"Leave_Records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_al"
+            )
+            st.success(f"✅ Annual leave records ready for download ({len(df_al)} records)")
+
+    # Seminar Records Export
+    with col3:
+        st.write("**Seminar Attendance Records**")
+        if st.button("📥 Export Seminar Records", use_container_width=True, key="export_seminar"):
+            df_seminar = load_seminar_records()
+            csv_seminar = df_seminar.to_csv(index=False)
+            st.download_button(
+                label="⬇️ Download Seminar_Records.csv",
+                data=csv_seminar,
+                file_name=f"Seminar_Records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_seminar"
+            )
+            st.success(f"✅ Seminar records ready for download ({len(df_seminar)} records)")
+
+    st.markdown("---")
+
+    # Leave Balances Export
+    st.subheader("💰 Leave Balance Records")
+    col_balance = st.columns(1)[0]
+    with col_balance:
+        if st.button("📥 Export Leave Balances", use_container_width=True, key="export_balances"):
+            df_balances = load_leave_balances()
+            csv_balances = df_balances.to_csv(index=False)
+            st.download_button(
+                label="⬇️ Download Leave_Balances.csv",
+                data=csv_balances,
+                file_name=f"Leave_Balances_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_balances"
+            )
+            st.success(f"✅ Leave balances ready for download ({len(df_balances)} records)")
+
+    st.markdown("---")
+
+    # Bulk Export
+    st.subheader("📦 Bulk Export All Data")
+    st.write("Export all records in a single operation for complete backup.")
+
+    if st.button("📥 Export All Data", type="primary", use_container_width=True, key="export_all"):
+        try:
+            # Load all data
+            df_wfh = load_wfh_records()
+            df_al = load_annual_leave_records()
+            df_seminar = load_seminar_records()
+            df_balances = load_leave_balances()
+            employees = load_employees()
+
+            # Create a summary
+            summary_text = f"""
+BACKUP SUMMARY
+==============
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Total Records:
+- WFH Records: {len(df_wfh)}
+- Annual Leave Records: {len(df_al)}
+- Seminar Records: {len(df_seminar)}
+- Leave Balances: {len(df_balances)}
+- Total Employees: {len(employees)}
+
+Files included in this backup:
+1. WFH_Records.csv
+2. Leave_Records.csv
+3. Seminar_Records.csv
+4. Leave_Balances.csv
+5. Backup_Summary.txt
+"""
+
+            # Prepare multiple files as a formatted text
+            backup_data = f"""
+=== WFH RECORDS ===
+{df_wfh.to_csv(index=False)}
+
+=== ANNUAL LEAVE RECORDS ===
+{df_al.to_csv(index=False)}
+
+=== SEMINAR RECORDS ===
+{df_seminar.to_csv(index=False)}
+
+=== LEAVE BALANCES ===
+{df_balances.to_csv(index=False)}
+
+=== BACKUP SUMMARY ===
+{summary_text}
+"""
+
+            st.download_button(
+                label="⬇️ Download Complete Backup (All Data)",
+                data=backup_data,
+                file_name=f"Complete_Backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                mime="text/plain",
+                key="download_all"
+            )
+
+            st.success("✅ Complete backup ready for download!")
+            st.info(f"""
+            📊 **Backup Contents:**
+            - WFH Records: {len(df_wfh)} entries
+            - Annual Leave Records: {len(df_al)} entries
+            - Seminar Records: {len(df_seminar)} entries
+            - Leave Balances: {len(df_balances)} employees
+            - Total Employees: {len(employees)} users
+            """)
+        except Exception as e:
+            st.error(f"❌ Error preparing backup: {e}")
+
+    st.markdown("---")
+
+    # Information section
+    st.subheader("ℹ️ Backup Information")
+    st.write("""
+    **What gets backed up:**
+    - All WFH scheduling records
+    - All annual leave records
+    - All seminar attendance records
+    - Employee leave balance data
+
+    **Recommended backup frequency:**
+    - Daily for active teams
+    - Weekly for minimal activity
+    - Before any system updates or migrations
+
+    **Best practices:**
+    - Store backups in a secure location
+    - Keep multiple versions for recovery
+    - Test restoration procedures regularly
+    - Include timestamps in file names for version tracking
+    """)
 
 # Footer
 st.markdown("---")
