@@ -9,7 +9,7 @@ from pathlib import Path
 import hashlib
 
 # Application version
-APP_VERSION = "2.1.3 - Sunday 16/11/2025"
+APP_VERSION = "2.3.1 - Sunday 16/11/2025"
 
 # Define all available screens
 ALL_SCREENS = ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees", "Configure Roles", "Backup & Export"]

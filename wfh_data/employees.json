@@ -2,7 +2,6 @@
   {
     "name": "MK - TechTok",
     "id": "0001",
-    "annual_leave_balance": 5,
     "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
     "role": "Admin",
     "screen_permissions": [
@@ -12,13 +11,13 @@
       "Schedule Annual Leave",
       "Schedule Seminars",
       "Manage Employees",
-      "Configure Roles"
+      "Configure Roles",
+      "Backup & Export"
     ]
   },
   {
     "name": "AV - DataStar",
     "id": "0002",
-    "annual_leave_balance": 5,
     "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
     "role": "User",
     "screen_permissions": [
@@ -30,7 +29,6 @@
   {
     "name": "MD - DataBaker",
     "id": "0003",
-    "annual_leave_balance": 5,
     "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
     "role": "User",
     "screen_permissions": [
@@ -42,7 +40,6 @@
   {
     "name": "NN - StatsRebel",
     "id": "0004",
-    "annual_leave_balance": 5,
     "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
     "role": "User",
     "screen_permissions": [
@@ -54,7 +51,6 @@
   {
     "name": "EZ - PivotDancer",
     "id": "0005",
-    "annual_leave_balance": 5,
     "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
     "role": "User",
     "screen_permissions": [
@@ -66,7 +62,6 @@
   {
     "name": "EK - QueryFury",
     "id": "0006",
-    "annual_leave_balance": 5,
     "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
     "role": "User",
     "screen_permissions": [
@@ -78,7 +73,6 @@
   {
     "name": "CL - FunInvestor",
     "id": "0007",
-    "annual_leave_balance": 5,
     "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
     "role": "User",
     "screen_permissions": [
@@ -90,7 +84,6 @@
   {
     "name": "MP - FitProfit",
     "id": "0008",
-    "annual_leave_balance": 5,
     "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
     "role": "User",
     "screen_permissions": [
@@ -102,7 +95,6 @@
   {
     "name": "NL - DashQueen",
     "id": "0009",
-    "annual_leave_balance": 5,
     "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
     "role": "User",
     "screen_permissions": [

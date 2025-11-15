@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python migrate_to_employee_id.py:*)"
+      "Bash(python migrate_to_employee_id.py:*)",
+      "Bash(cat:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd extensive debugging and verification to leave balance save\n\nAdded debugging:\n- Detailed logging in save_leave_balances() for file operations\n- Logging in set_leave_balance() to track execution flow\n- File existence and size verification after write\n- OS-level file flush to ensure data is written to disk\n\nAdded verification logic:\n- Read back the saved balance to verify it was actually saved\n- Retry save if verification fails\n- Explicit sleep between save and read to handle Windows file buffering\n- Warnings in UI if verification fails\n\nThis will help identify exactly where the issue occurs when the balance\ndoesn''t persist correctly. The extensive logging will show in stderr when\nStreamlit app is running.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []
