@@ -1,0 +1,14 @@
+{
+  "Admin": [
+    "Dashboard",
+    "Reports",
+    "Schedule WFH",
+    "Schedule Annual Leave",
+    "Schedule Seminars",
+    "Manage Employees",
+    "Configure Roles"
+  ],
+  "User": [
+    "Dashboard"
+  ]
+}

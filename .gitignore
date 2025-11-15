@@ -21,6 +21,4 @@ venv/
 Thumbs.db
 
 # Data files - DO NOT SYNC (contains sensitive employee data)
-wfh_data/
 *.csv
-*.json

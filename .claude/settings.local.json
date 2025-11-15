@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python migrate_to_employee_id.py:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
