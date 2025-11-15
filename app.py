@@ -57,7 +57,29 @@ def save_leave_balances(df):
     # Ensure correct data types before saving
     df['employee_id'] = df['employee_id'].astype(str)
     df['annual_leave_balance'] = df['annual_leave_balance'].astype(int)
+
+    import sys
+    import os
+    print(f"DEBUG save_leave_balances: Writing to {LEAVE_BALANCES_FILE}", file=sys.stderr)
+    print(f"DEBUG save_leave_balances: Data before save:", file=sys.stderr)
+    print(df.to_string(), file=sys.stderr)
+
+    # Write to CSV
     df.to_csv(LEAVE_BALANCES_FILE, index=False)
+
+    # Force OS to flush the file to disk (important on Windows)
+    try:
+        import time
+        time.sleep(0.1)  # Brief pause before flushing
+        if os.path.exists(LEAVE_BALANCES_FILE):
+            # Open and close to ensure flush
+            with open(LEAVE_BALANCES_FILE, 'r') as f:
+                f.read(1)  # Read a byte to trigger buffer flush
+            print(f"DEBUG save_leave_balances: File flushed, size: {os.path.getsize(LEAVE_BALANCES_FILE)} bytes", file=sys.stderr)
+    except Exception as e:
+        print(f"DEBUG save_leave_balances: Flush error (non-critical): {e}", file=sys.stderr)
+
+    sys.stderr.flush()
 
 # Get leave balance for an employee
 def get_leave_balance(employee_id):
@@ -73,11 +95,15 @@ def get_leave_balance(employee_id):
 # Set leave balance for an employee
 def set_leave_balance(employee_id, balance):
     try:
+        import sys
         # Ensure employee_id is always a string
         employee_id = str(employee_id).strip()
         balance = int(balance)
 
+        print(f"DEBUG set_leave_balance: Called with employee_id='{employee_id}', balance={balance}", file=sys.stderr)
+
         df = load_leave_balances()
+        print(f"DEBUG set_leave_balance: Loaded {len(df)} records from CSV", file=sys.stderr)
 
         # Check if employee exists using case-insensitive and whitespace-tolerant comparison
         employee_exists = False
@@ -85,22 +111,31 @@ def set_leave_balance(employee_id, balance):
             # Convert all IDs to string and strip whitespace for comparison
             df_ids_clean = df['employee_id'].astype(str).str.strip()
             employee_exists = employee_id in df_ids_clean.values
+            print(f"DEBUG set_leave_balance: employee_exists={employee_exists}", file=sys.stderr)
 
         if employee_exists:
             # Use a copy to avoid SettingWithCopyWarning
             df = df.copy()
             # Update using the cleaned employee_id
+            print(f"DEBUG set_leave_balance: Updating existing record", file=sys.stderr)
             df.loc[df['employee_id'].astype(str).str.strip() == employee_id, 'annual_leave_balance'] = balance
+            print(f"DEBUG set_leave_balance: After update:", file=sys.stderr)
+            print(df[df['employee_id'].astype(str).str.strip() == employee_id].to_string(), file=sys.stderr)
         else:
             # Add new record
+            print(f"DEBUG set_leave_balance: Adding new record", file=sys.stderr)
             new_record = pd.DataFrame({'employee_id': [employee_id], 'annual_leave_balance': [balance]})
             df = pd.concat([df, new_record], ignore_index=True)
 
         save_leave_balances(df)
+        print(f"DEBUG set_leave_balance: Saved successfully", file=sys.stderr)
+        sys.stderr.flush()
         return True
     except Exception as e:
         import sys
         print(f"ERROR in set_leave_balance: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
         return False
 
@@ -1518,9 +1553,21 @@ elif page == "Manage Employees":
                         # Update leave balance and verify it was saved
                         success = set_leave_balance(edited_id, edited_leave)
                         if success:
-                            st.success(f"✅ Updated employee to {edited_name} (ID: {edited_id}, Role: {edited_role}, Leave: {edited_leave} days)")
+                            # Verify the save by reading back from disk
                             import time
-                            time.sleep(0.2)  # Small delay to ensure file is flushed
+                            time.sleep(0.3)  # Wait longer to ensure file is fully written
+
+                            verified_balance = get_leave_balance(edited_id)
+                            if verified_balance == edited_leave:
+                                st.success(f"✅ Updated employee to {edited_name} (ID: {edited_id}, Role: {edited_role}, Leave: {edited_leave} days)")
+                            else:
+                                st.warning(f"⚠️ Updated employee but balance verification shows {verified_balance} instead of {edited_leave}. Retrying...")
+                                # Retry the save
+                                success = set_leave_balance(edited_id, edited_leave)
+                                if success:
+                                    st.success(f"✅ Successfully updated after retry")
+
+                            time.sleep(0.2)
                             st.rerun()
                         else:
                             st.error(f"❌ Failed to update leave balance. Please try again.")
