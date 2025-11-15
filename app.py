@@ -2240,6 +2240,198 @@ Files included in this backup:
 
     st.markdown("---")
 
+    # RESTORE SECTION
+    st.subheader("📤 Restore Data from Backup")
+    st.write("Upload CSV files to restore data from previous backups. Select one or more files to restore.")
+
+    # Create tabs for restoration options
+    restore_tab1, restore_tab2, restore_tab3 = st.tabs(["Individual Restore", "Bulk Restore", "Restore Info"])
+
+    with restore_tab1:
+        st.write("**Restore Individual Data Types**")
+        st.warning("⚠️ Restoring will overwrite existing data. Make sure you have a recent backup!")
+
+        col_restore1, col_restore2 = st.columns(2)
+
+        # WFH Records Restore
+        with col_restore1:
+            st.write("**Restore WFH Records**")
+            wfh_file = st.file_uploader("Upload WFH Records CSV", type=["csv"], key="restore_wfh")
+            if wfh_file is not None:
+                if st.button("🔄 Restore WFH Records", type="primary", use_container_width=True, key="restore_wfh_btn"):
+                    try:
+                        df_wfh_restore = pd.read_csv(wfh_file, dtype={'employee_id': str})
+                        save_wfh_records(df_wfh_restore)
+                        st.success(f"✅ Successfully restored {len(df_wfh_restore)} WFH records!")
+                        st.info("The page will refresh to load the restored data.")
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Error restoring WFH records: {e}")
+
+        # Annual Leave Records Restore
+        with col_restore2:
+            st.write("**Restore Annual Leave Records**")
+            al_file = st.file_uploader("Upload Annual Leave Records CSV", type=["csv"], key="restore_al")
+            if al_file is not None:
+                if st.button("🔄 Restore Leave Records", type="primary", use_container_width=True, key="restore_al_btn"):
+                    try:
+                        df_al_restore = pd.read_csv(al_file, dtype={'employee_id': str})
+                        save_annual_leave_records(df_al_restore)
+                        st.success(f"✅ Successfully restored {len(df_al_restore)} Annual Leave records!")
+                        st.info("The page will refresh to load the restored data.")
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Error restoring Annual Leave records: {e}")
+
+        col_restore3, col_restore4 = st.columns(2)
+
+        # Seminar Records Restore
+        with col_restore3:
+            st.write("**Restore Seminar Records**")
+            seminar_file = st.file_uploader("Upload Seminar Records CSV", type=["csv"], key="restore_seminar")
+            if seminar_file is not None:
+                if st.button("🔄 Restore Seminar Records", type="primary", use_container_width=True, key="restore_seminar_btn"):
+                    try:
+                        df_seminar_restore = pd.read_csv(seminar_file, dtype={'employee_id': str})
+                        save_seminar_records(df_seminar_restore)
+                        st.success(f"✅ Successfully restored {len(df_seminar_restore)} Seminar records!")
+                        st.info("The page will refresh to load the restored data.")
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Error restoring Seminar records: {e}")
+
+        # Leave Balances Restore
+        with col_restore4:
+            st.write("**Restore Leave Balances**")
+            balances_file = st.file_uploader("Upload Leave Balances CSV", type=["csv"], key="restore_balances")
+            if balances_file is not None:
+                if st.button("🔄 Restore Leave Balances", type="primary", use_container_width=True, key="restore_balances_btn"):
+                    try:
+                        df_balances_restore = pd.read_csv(balances_file, dtype={'employee_id': str, 'annual_leave_balance': int})
+                        save_leave_balances(df_balances_restore)
+                        st.success(f"✅ Successfully restored {len(df_balances_restore)} Leave Balance records!")
+                        st.info("The page will refresh to load the restored data.")
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Error restoring Leave Balances: {e}")
+
+    with restore_tab2:
+        st.write("**Bulk Restore All Data**")
+        st.warning("⚠️ This will overwrite all existing data! Only use to restore from a complete backup.")
+
+        bulk_file = st.file_uploader("Upload Complete Backup File", type=["txt"], key="restore_bulk")
+        if bulk_file is not None:
+            st.info("📋 File uploaded successfully. Click the button below to restore all data from this backup.")
+            if st.button("🔄 Restore All Data", type="primary", use_container_width=True, key="restore_all_btn"):
+                try:
+                    backup_content = bulk_file.read().decode('utf-8')
+
+                    # Parse the backup file sections
+                    sections = backup_content.split('===')
+                    restored_count = 0
+
+                    # Process each section
+                    for section in sections:
+                        lines = section.strip().split('\n')
+                        if not lines:
+                            continue
+
+                        section_title = lines[0].strip()
+
+                        if 'WFH RECORDS' in section_title:
+                            csv_data = '\n'.join(lines[1:])
+                            if csv_data.strip():
+                                from io import StringIO
+                                df_wfh = pd.read_csv(StringIO(csv_data), dtype={'employee_id': str})
+                                if not df_wfh.empty:
+                                    save_wfh_records(df_wfh)
+                                    st.success(f"✅ Restored {len(df_wfh)} WFH records")
+                                    restored_count += len(df_wfh)
+
+                        elif 'ANNUAL LEAVE' in section_title:
+                            csv_data = '\n'.join(lines[1:])
+                            if csv_data.strip():
+                                from io import StringIO
+                                df_al = pd.read_csv(StringIO(csv_data), dtype={'employee_id': str})
+                                if not df_al.empty:
+                                    save_annual_leave_records(df_al)
+                                    st.success(f"✅ Restored {len(df_al)} Annual Leave records")
+                                    restored_count += len(df_al)
+
+                        elif 'SEMINAR RECORDS' in section_title:
+                            csv_data = '\n'.join(lines[1:])
+                            if csv_data.strip():
+                                from io import StringIO
+                                df_seminar = pd.read_csv(StringIO(csv_data), dtype={'employee_id': str})
+                                if not df_seminar.empty:
+                                    save_seminar_records(df_seminar)
+                                    st.success(f"✅ Restored {len(df_seminar)} Seminar records")
+                                    restored_count += len(df_seminar)
+
+                        elif 'LEAVE BALANCES' in section_title:
+                            csv_data = '\n'.join(lines[1:])
+                            if csv_data.strip():
+                                from io import StringIO
+                                df_balances = pd.read_csv(StringIO(csv_data), dtype={'employee_id': str, 'annual_leave_balance': int})
+                                if not df_balances.empty:
+                                    save_leave_balances(df_balances)
+                                    st.success(f"✅ Restored {len(df_balances)} Leave Balance records")
+                                    restored_count += len(df_balances)
+
+                    st.success(f"✅ Successfully restored all data! Total records restored: {restored_count}")
+                    st.info("The page will refresh to load the restored data.")
+                    import time
+                    time.sleep(1)
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"❌ Error restoring backup: {e}")
+                    st.info("Make sure the file is a valid backup from this application.")
+
+    with restore_tab3:
+        st.write("""
+        **How to Restore Data:**
+
+        1. **Individual Restore**: Use this for restoring specific data types
+           - Upload the CSV file for the data type you want to restore
+           - The system will validate the file format
+           - Click "Restore" to overwrite existing data
+           - The page will refresh automatically with restored data
+
+        2. **Bulk Restore**: Use this for complete system recovery
+           - Upload the complete backup file (generated from "Export All Data")
+           - All records will be restored to the system
+           - This overwrites ALL existing data
+           - Use only for full system recovery or migration
+
+        **Supported File Types:**
+        - Individual restores: CSV files
+        - Bulk restore: Text files (.txt) generated by "Export All Data"
+
+        **Important Notes:**
+        - Always verify the backup file is correct before restoring
+        - Current data will be overwritten - make a backup first!
+        - Restoration is immediate - there's no undo
+        - Employee management (add/remove/edit) is still done in the Employee Management screen
+        - Use this feature for data recovery only
+
+        **Recommended Workflow:**
+        1. Export all data before making major changes
+        2. Make your changes or updates
+        3. If something goes wrong, restore from the backup
+        4. Keep multiple backup versions for safety
+        """)
+
+    st.markdown("---")
+
     # Information section
     st.subheader("ℹ️ Backup Information")
     st.write("""
