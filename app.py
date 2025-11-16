@@ -180,58 +180,59 @@ def load_employees():
         print(f"ERROR loading employees.json: {e}", file=sys.stderr)
         # Return empty list if file is corrupted
         employees = []
-        # Handle legacy format (list of strings)
-        if employees and isinstance(employees[0], str):
-            employees = [{'name': emp, 'id': '', 'annual_leave_balance': 20, 'password': hash_password('1234'), 'role': 'User'} for emp in employees]
-            save_employees(employees)
-        # Handle format without annual leave balance
-        elif employees and 'annual_leave_balance' not in employees[0]:
-            for emp in employees:
-                emp['annual_leave_balance'] = 20
-            save_employees(employees)
-        # Handle format without password and role
-        if employees:
-            needs_save = False
-            leave_balances_to_migrate = []
-            for emp in employees:
-                if 'password' not in emp:
-                    emp['password'] = hash_password('1234')  # Default password
-                    needs_save = True
-                if 'role' not in emp:
-                    # Set Marios Komis as admin, others as users
-                    emp['role'] = 'Admin' if emp['name'] == 'Marios Komis' else 'User'
-                    needs_save = True
-                # Handle format without screen_permissions
-                if 'screen_permissions' not in emp:
-                    role = emp.get('role', 'User')
-                    role_permissions = load_role_permissions()
-                    emp['screen_permissions'] = role_permissions.get(role, [])
-                    needs_save = True
-                # Migrate annual_leave_balance to CSV file
-                if 'annual_leave_balance' in emp:
-                    leave_balances_to_migrate.append({
-                        'employee_id': emp['id'],
-                        'annual_leave_balance': emp['annual_leave_balance']
-                    })
-                    del emp['annual_leave_balance']  # Remove from JSON
-                    needs_save = True
+    
+    # Handle legacy format (list of strings)
+    if employees and isinstance(employees[0], str):
+        employees = [{'name': emp, 'id': '', 'annual_leave_balance': 20, 'password': hash_password('1234'), 'role': 'User'} for emp in employees]
+        save_employees(employees)
+    # Handle format without annual leave balance
+    elif employees and 'annual_leave_balance' not in employees[0]:
+        for emp in employees:
+            emp['annual_leave_balance'] = 20
+        save_employees(employees)
+    # Handle format without password and role
+    if employees:
+        needs_save = False
+        leave_balances_to_migrate = []
+        for emp in employees:
+            if 'password' not in emp:
+                emp['password'] = hash_password('1234')  # Default password
+                needs_save = True
+            if 'role' not in emp:
+                # Set Marios Komis as admin, others as users
+                emp['role'] = 'Admin' if emp['name'] == 'Marios Komis' else 'User'
+                needs_save = True
+            # Handle format without screen_permissions
+            if 'screen_permissions' not in emp:
+                role = emp.get('role', 'User')
+                role_permissions = load_role_permissions()
+                emp['screen_permissions'] = role_permissions.get(role, [])
+                needs_save = True
+            # Migrate annual_leave_balance to CSV file
+            if 'annual_leave_balance' in emp:
+                leave_balances_to_migrate.append({
+                    'employee_id': emp['id'],
+                    'annual_leave_balance': emp['annual_leave_balance']
+                })
+                del emp['annual_leave_balance']  # Remove from JSON
+                needs_save = True
 
-            # Save migrated leave balances to CSV
-            if leave_balances_to_migrate:
-                df_existing = load_leave_balances()
-                df_new = pd.DataFrame(leave_balances_to_migrate)
-                # IMPORTANT: Only add new records that don't already exist in CSV
-                # Don't overwrite existing CSV values with old JSON values
-                # This prevents the migration from overwriting updated balances
-                for _, new_row in df_new.iterrows():
-                    emp_id = new_row['employee_id']
-                    # Only add if employee_id doesn't already exist in CSV
-                    if emp_id not in df_existing['employee_id'].values:
-                        df_existing = pd.concat([df_existing, pd.DataFrame([new_row])], ignore_index=True)
-                save_leave_balances(df_existing)
+        # Save migrated leave balances to CSV
+        if leave_balances_to_migrate:
+            df_existing = load_leave_balances()
+            df_new = pd.DataFrame(leave_balances_to_migrate)
+            # IMPORTANT: Only add new records that don't already exist in CSV
+            # Don't overwrite existing CSV values with old JSON values
+            # This prevents the migration from overwriting updated balances
+            for _, new_row in df_new.iterrows():
+                emp_id = new_row['employee_id']
+                # Only add if employee_id doesn't already exist in CSV
+                if emp_id not in df_existing['employee_id'].values:
+                    df_existing = pd.concat([df_existing, pd.DataFrame([new_row])], ignore_index=True)
+            save_leave_balances(df_existing)
 
-            if needs_save:
-                save_employees(employees)
+        if needs_save:
+            save_employees(employees)
     return employees
 
 # Save employees
