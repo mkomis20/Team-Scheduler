@@ -36,14 +36,32 @@ LEAVE_BALANCES_FILE = DATA_DIR / "leave_balances.csv"
 # Load role permissions
 def load_role_permissions():
     if ROLE_PERMISSIONS_FILE.exists():
-        with open(ROLE_PERMISSIONS_FILE, 'r') as f:
-            return json.load(f)
+        try:
+            with open(ROLE_PERMISSIONS_FILE, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, ValueError) as e:
+            import sys
+            print(f"ERROR loading role_permissions.json: {e}", file=sys.stderr)
+            return DEFAULT_ROLE_PERMISSIONS.copy()
     return DEFAULT_ROLE_PERMISSIONS.copy()
 
 # Save role permissions
 def save_role_permissions(permissions):
-    with open(ROLE_PERMISSIONS_FILE, 'w') as f:
-        json.dump(permissions, f, indent=2)
+    # Write to a temporary file first, then rename (atomic operation)
+    import tempfile
+    temp_fd, temp_path = tempfile.mkstemp(dir=DATA_DIR, suffix='.json')
+    try:
+        with os.fdopen(temp_fd, 'w') as f:
+            json.dump(permissions, f, indent=2)
+        # Atomic rename
+        os.replace(temp_path, ROLE_PERMISSIONS_FILE)
+    except Exception as e:
+        # Clean up temp file if write failed
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
+        raise e
 
 # Load leave balances
 def load_leave_balances():
@@ -154,8 +172,14 @@ def hash_password(password):
 
 # Load employees
 def load_employees():
-    with open(EMPLOYEES_FILE, 'r') as f:
-        employees = json.load(f)
+    try:
+        with open(EMPLOYEES_FILE, 'r') as f:
+            employees = json.load(f)
+    except (json.JSONDecodeError, ValueError) as e:
+        import sys
+        print(f"ERROR loading employees.json: {e}", file=sys.stderr)
+        # Return empty list if file is corrupted
+        employees = []
         # Handle legacy format (list of strings)
         if employees and isinstance(employees[0], str):
             employees = [{'name': emp, 'id': '', 'annual_leave_balance': 20, 'password': hash_password('1234'), 'role': 'User'} for emp in employees]
@@ -212,8 +236,21 @@ def load_employees():
 
 # Save employees
 def save_employees(employees):
-    with open(EMPLOYEES_FILE, 'w') as f:
-        json.dump(employees, f, indent=2)
+    # Write to a temporary file first, then rename (atomic operation)
+    import tempfile
+    temp_fd, temp_path = tempfile.mkstemp(dir=DATA_DIR, suffix='.json')
+    try:
+        with os.fdopen(temp_fd, 'w') as f:
+            json.dump(employees, f, indent=2)
+        # Atomic rename
+        os.replace(temp_path, EMPLOYEES_FILE)
+    except Exception as e:
+        # Clean up temp file if write failed
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
+        raise e
 
 # Helper function to get employee ID from name
 def get_employee_id_by_name(employee_name):
