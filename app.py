@@ -232,7 +232,7 @@ def load_employees():
 
             if needs_save:
                 save_employees(employees)
-        return employees
+    return employees
 
 # Save employees
 def save_employees(employees):
