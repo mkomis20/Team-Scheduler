@@ -9,7 +9,7 @@ from pathlib import Path
 import hashlib
 
 # Application version
-APP_VERSION = "3.1 - Sunday 18/01/2026"
+APP_VERSION = "4.0 - Friday 17/01/2026"
 
 # Define all available screens
 ALL_SCREENS = ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees", "Configure Roles", "Manage Public Holidays", "Backup & Export"]
@@ -1171,27 +1171,132 @@ elif page == "Schedule WFH":
             selected_employee_name = selected_employee_display.split(" (ID:")[0]
             selected_employee_id = selected_employee_display.split("ID: ")[1].rstrip(")")
 
-            # Date range or single date selection
-            date_mode = st.radio("Select date mode:", ["Single Date", "Date Range"], horizontal=True)
+            # Date selection mode
+            date_mode = st.radio("Select date mode:", ["Calendar Picker", "Single Date"], horizontal=True, key="wfh_date_mode")
 
-            if date_mode == "Single Date":
+            if date_mode == "Calendar Picker":
+                st.write("**Interactive Calendar - Click on days to select/deselect WFH days**")
+
+                # Initialize session state for selected dates if not exists
+                if 'wfh_selected_dates' not in st.session_state:
+                    st.session_state.wfh_selected_dates = set()
+                if 'wfh_calendar_month_offset' not in st.session_state:
+                    st.session_state.wfh_calendar_month_offset = 0
+
+                # Calendar navigation
+                col_nav_left, col_nav_center, col_nav_right = st.columns([1, 3, 1])
+                today = datetime.now().date()
+                viewing_date = today + timedelta(days=30 * st.session_state.wfh_calendar_month_offset)
+
+                with col_nav_left:
+                    if st.button("◀ Previous", key="wfh_cal_prev"):
+                        st.session_state.wfh_calendar_month_offset -= 1
+                        st.rerun()
+                with col_nav_center:
+                    st.markdown(f"<h4 style='text-align: center;'>{viewing_date.strftime('%B %Y')}</h4>", unsafe_allow_html=True)
+                with col_nav_right:
+                    if st.button("Next ▶", key="wfh_cal_next"):
+                        st.session_state.wfh_calendar_month_offset += 1
+                        st.rerun()
+
+                # Load existing WFH records for this employee
+                df_wfh_existing = load_wfh_records()
+                if not df_wfh_existing.empty:
+                    employee_wfh = df_wfh_existing[df_wfh_existing['employee_id'] == selected_employee_id]['date'].tolist()
+                else:
+                    employee_wfh = []
+
+                # Calculate calendar dates
+                start_of_month = viewing_date.replace(day=1)
+                start_of_week = start_of_month - timedelta(days=start_of_month.weekday())
+
+                # Generate calendar using Streamlit columns instead of HTML table
+                st.markdown("---")
+
+                # Day headers
+                header_cols = st.columns(7)
+                days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                for idx, day in enumerate(days):
+                    with header_cols[idx]:
+                        st.markdown(f"<div style='background-color: #333; color: white; padding: 8px; text-align: center; font-weight: bold; border-radius: 4px;'>{day}</div>", unsafe_allow_html=True)
+
+                st.markdown("<div style='margin: 5px 0;'></div>", unsafe_allow_html=True)
+
+                # Generate 5 weeks with clickable buttons
+                current_date = start_of_week
+                for week in range(5):
+                    week_cols = st.columns(7)
+                    for day in range(7):
+                        date_to_show = current_date + timedelta(days=week * 7 + day)
+                        is_past = date_to_show < today
+                        is_current_month = date_to_show.month == viewing_date.month
+
+                        # Check if date has existing WFH record
+                        has_wfh = pd.to_datetime(date_to_show) in employee_wfh
+
+                        # Determine button type and styling
+                        button_type = "primary" if has_wfh else "secondary"
+                        disabled = is_past  # Disable past dates
+
+                        with week_cols[day]:
+                            # Create button label
+                            day_label = date_to_show.strftime('%d')
+                            if has_wfh:
+                                button_label = f"✓ {day_label}"
+                            else:
+                                button_label = day_label
+
+                            # Add opacity indicator for non-current month
+                            if not is_current_month:
+                                button_label = f"({day_label})"
+
+                            # Create clickable button for each day
+                            button_key = f"wfh_day_{date_to_show.strftime('%Y%m%d')}_{selected_employee_id}"
+
+                            if st.button(
+                                button_label,
+                                key=button_key,
+                                disabled=disabled,
+                                use_container_width=True,
+                                type=button_type if has_wfh and not disabled else "secondary"
+                            ):
+                                # Toggle WFH for this day
+                                if has_wfh:
+                                    # Remove WFH
+                                    remove_wfh_record(selected_employee_id, date_to_show)
+                                    st.success(f"✅ WFH removed for {selected_employee_name} on {date_to_show.strftime('%d %b %Y')}")
+                                else:
+                                    # Check for conflicts
+                                    has_entry, entry_type, details = check_existing_entry(selected_employee_id, date_to_show)
+                                    if has_entry and entry_type != 'WFH':
+                                        st.error(f"❌ {selected_employee_name} already has {details} on {date_to_show.strftime('%d %b %Y')}")
+                                    else:
+                                        # Add WFH
+                                        add_wfh_record(selected_employee_id, date_to_show)
+                                        st.success(f"✅ WFH added for {selected_employee_name} on {date_to_show.strftime('%d %b %Y')}")
+                                st.rerun()
+
+                    st.markdown("<div style='margin: 3px 0;'></div>", unsafe_allow_html=True)
+
+                # Instructions
+                st.info("💡 **How to use:** Click on any future day to toggle WFH on/off. Days with ✓ have WFH scheduled. Past dates are disabled.")
+
+                st.markdown("**Legend:**")
+                col_leg1, col_leg2, col_leg3 = st.columns(3)
+                with col_leg1:
+                    st.markdown("🔵 **Primary Button** = Has WFH")
+                with col_leg2:
+                    st.markdown("⚪ **Gray Button** = No WFH")
+                with col_leg3:
+                    st.markdown("🚫 **Disabled** = Past date")
+
+                # Note: Calendar picker handles adding/removing directly via button clicks
+                # No additional date selection needed
+                date_range = []  # Empty since calendar buttons handle the logic
+
+            else:  # Single Date
                 selected_date = st.date_input("Select Date", value=datetime.now().date())
                 date_range = [selected_date]
-            else:
-                st.write("Select start and end dates:")
-                col_date1, col_date2 = st.columns(2)
-                with col_date1:
-                    start_date = st.date_input("Start Date", value=datetime.now().date(), key="wfh_start")
-                with col_date2:
-                    end_date = st.date_input("End Date", value=datetime.now().date(), key="wfh_end")
-
-                if start_date > end_date:
-                    st.error("❌ Start date must be before or equal to end date")
-                    date_range = []
-                else:
-                    # Generate date range
-                    date_range = pd.date_range(start=start_date, end=end_date).date.tolist()
-                    st.info(f"📅 Selected {len(date_range)} day(s)")
 
             col_a, col_b = st.columns(2)
             with col_a:
