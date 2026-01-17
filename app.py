@@ -1856,7 +1856,7 @@ elif page == "Reports":
         for emp in employees:
             emp_name = emp['name']
             emp_id = emp['id']
-            leave_balance = emp.get('annual_leave_balance', 20)
+            leave_balance = get_leave_balance(emp_id)
 
             # Count scheduled leave days
             if not al_df.empty:
