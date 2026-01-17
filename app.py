@@ -12,11 +12,11 @@ import hashlib
 APP_VERSION = "2.3.1 - Sunday 16/11/2025"
 
 # Define all available screens
-ALL_SCREENS = ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees", "Configure Roles", "Backup & Export"]
+ALL_SCREENS = ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees", "Configure Roles", "Manage Public Holidays", "Backup & Export"]
 
 # Default role permissions (can be customized per user)
 DEFAULT_ROLE_PERMISSIONS = {
-    "Admin": ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees", "Configure Roles", "Backup & Export"],
+    "Admin": ["Dashboard", "Reports", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars", "Manage Employees", "Configure Roles", "Manage Public Holidays", "Backup & Export"],
     "User": ["Dashboard", "Schedule WFH", "Schedule Annual Leave", "Schedule Seminars"]
 }
 
@@ -32,6 +32,7 @@ ANNUAL_LEAVE_RECORDS_FILE = DATA_DIR / "annual_leave_records.csv"
 SEMINAR_RECORDS_FILE = DATA_DIR / "seminar_records.csv"
 ROLE_PERMISSIONS_FILE = DATA_DIR / "role_permissions.json"
 LEAVE_BALANCES_FILE = DATA_DIR / "leave_balances.csv"
+PUBLIC_HOLIDAYS_FILE = DATA_DIR / "public_holidays.csv"
 
 # Load role permissions
 def load_role_permissions():
@@ -239,12 +240,32 @@ def load_employees():
 def save_employees(employees):
     # Write to a temporary file first, then rename (atomic operation)
     import tempfile
+    import time
     temp_fd, temp_path = tempfile.mkstemp(dir=DATA_DIR, suffix='.json')
     try:
         with os.fdopen(temp_fd, 'w') as f:
             json.dump(employees, f, indent=2)
-        # Atomic rename
-        os.replace(temp_path, EMPLOYEES_FILE)
+
+        # On Windows, os.replace can fail if file is locked. Retry with backoff.
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # On Windows, try to remove target first if it exists
+                if os.path.exists(EMPLOYEES_FILE):
+                    try:
+                        os.remove(EMPLOYEES_FILE)
+                    except PermissionError:
+                        if attempt < max_retries - 1:
+                            time.sleep(0.1 * (attempt + 1))
+                            continue
+                        raise
+                os.replace(temp_path, EMPLOYEES_FILE)
+                break
+            except PermissionError as pe:
+                if attempt < max_retries - 1:
+                    time.sleep(0.1 * (attempt + 1))
+                else:
+                    raise pe
     except Exception as e:
         # Clean up temp file if write failed
         try:
@@ -436,6 +457,84 @@ def get_seminar_counts():
     counts['seminar_days'] = counts['seminar_days'].astype(int)
 
     return counts
+
+# Load Public Holidays
+def load_public_holidays():
+    if PUBLIC_HOLIDAYS_FILE.exists():
+        df = pd.read_csv(PUBLIC_HOLIDAYS_FILE)
+        if not df.empty:
+            df['date'] = pd.to_datetime(df['date'])
+        return df
+    return pd.DataFrame(columns=['date', 'name'])
+
+# Save Public Holidays
+def save_public_holidays(df):
+    df.to_csv(PUBLIC_HOLIDAYS_FILE, index=False)
+
+# Add Public Holiday
+def add_public_holiday(date, name):
+    df = load_public_holidays()
+
+    # Check if holiday already exists on this date
+    if not df.empty and pd.to_datetime(date) in df['date'].values:
+        return False  # Holiday already exists
+
+    # Add new holiday
+    new_holiday = pd.DataFrame({
+        'date': [pd.to_datetime(date)],
+        'name': [name]
+    })
+    df = pd.concat([df, new_holiday], ignore_index=True)
+    df = df.sort_values('date').reset_index(drop=True)
+    save_public_holidays(df)
+    return True
+
+# Remove Public Holiday
+def remove_public_holiday(date):
+    df = load_public_holidays()
+    df = df[df['date'] != pd.to_datetime(date)]
+    save_public_holidays(df)
+
+# Check if a date is a public holiday
+def is_public_holiday(date):
+    df = load_public_holidays()
+    if df.empty:
+        return False, None
+    holiday = df[df['date'] == pd.to_datetime(date)]
+    if not holiday.empty:
+        return True, holiday.iloc[0]['name']
+    return False, None
+
+# Check if a date is a business day (not weekend, not public holiday)
+def is_business_day(date):
+    """
+    Check if a date is a business day (Monday-Friday, not a public holiday).
+    Returns: bool - True if business day, False otherwise
+    """
+    # Convert to datetime if needed
+    if isinstance(date, str):
+        date = pd.to_datetime(date)
+
+    # Check if weekend (Saturday=5, Sunday=6)
+    if date.weekday() >= 5:
+        return False
+
+    # Check if public holiday
+    is_holiday, _ = is_public_holiday(date)
+    if is_holiday:
+        return False
+
+    return True
+
+# Get list of business days from a date range
+def get_business_days(start_date, end_date):
+    """
+    Get a list of business days (excluding weekends and public holidays) between two dates.
+    Returns: list of dates
+    """
+    all_dates = pd.date_range(start=start_date, end=end_date).date.tolist()
+    business_days = [date for date in all_dates if is_business_day(date)]
+    return business_days
 
 # Check if employee has existing entry for a specific date
 def check_existing_entry(employee_id, date):
@@ -735,9 +834,10 @@ if page == "Dashboard":
                     st.session_state.calendar_month_offset += 1
                     st.rerun()
 
-        # Load WFH, Annual Leave, and Seminar records
+        # Load WFH, Annual Leave, Seminar records, and Public Holidays
         df_al_records = load_annual_leave_records()
         df_seminar_records = load_seminar_records()
+        df_holidays = load_public_holidays()
 
         if not df_records.empty or not df_al_records.empty or not df_seminar_records.empty:
             # Calculate the start of the viewing month
@@ -775,6 +875,12 @@ if page == "Dashboard":
                 ).to_dict()
             else:
                 seminar_by_date = {}
+
+            # Create a dictionary of public holidays by date
+            if not df_holidays.empty:
+                holidays_by_date = {pd.to_datetime(row['date']): row['name'] for _, row in df_holidays.iterrows()}
+            else:
+                holidays_by_date = {}
 
             # Create HTML calendar
             calendar_html = """
@@ -858,6 +964,20 @@ if page == "Dashboard":
                 border-radius: 3px;
                 display: block;
             }
+            .public-holiday {
+                font-size: 11px;
+                background-color: #FFD700;
+                color: #333;
+                padding: 2px 4px;
+                margin: 2px 0;
+                border-radius: 3px;
+                display: block;
+                font-weight: bold;
+            }
+            .calendar-day-holiday {
+                background-color: #FFF9E6;
+                border: 2px solid #FFD700;
+            }
             .day-header {
                 background-color: #333;
                 color: white;
@@ -884,9 +1004,13 @@ if page == "Dashboard":
                     date_to_show = current_date + timedelta(days=week * 7 + day)
                     is_past = date_to_show < today
                     is_weekend = date_to_show.weekday() >= 5
+                    date_key = pd.to_datetime(date_to_show)
+                    is_holiday = date_key in holidays_by_date
 
                     day_class = "calendar-day"
-                    if is_past:
+                    if is_holiday:
+                        day_class += " calendar-day-holiday"
+                    elif is_past:
                         day_class += " calendar-day-past"
                     elif is_weekend:
                         day_class += " calendar-day-weekend"
@@ -894,8 +1018,12 @@ if page == "Dashboard":
                     calendar_html += f'<div class="{day_class}">'
                     calendar_html += f'<div class="calendar-day-header">{date_to_show.strftime("%b %d")}</div>'
 
+                    # Add public holiday marker if this is a holiday
+                    if is_holiday:
+                        holiday_name = holidays_by_date[date_key]
+                        calendar_html += f'<span class="public-holiday">🎉 {holiday_name}</span>'
+
                     # Add WFH employees for this date (show both past and future)
-                    date_key = pd.to_datetime(date_to_show)
                     if date_key in wfh_by_date:
                         emp_class = "wfh-employee-past" if is_past else "wfh-employee"
                         for emp in wfh_by_date[date_key]:
@@ -1220,14 +1348,24 @@ elif page == "Schedule Annual Leave":
                     st.error("❌ Start date must be before or equal to end date")
                     date_range = []
                 else:
-                    # Generate date range
-                    date_range = pd.date_range(start=start_date, end=end_date).date.tolist()
-                    st.info(f"📅 Selected {len(date_range)} day(s)")
+                    # Generate date range - only business days (excluding weekends and public holidays)
+                    all_dates = pd.date_range(start=start_date, end=end_date).date.tolist()
+                    date_range = get_business_days(start_date, end_date)
+
+                    # Show info about selected days
+                    total_days = len(all_dates)
+                    business_days_count = len(date_range)
+                    excluded_days = total_days - business_days_count
+
+                    if excluded_days > 0:
+                        st.info(f"📅 Selected {business_days_count} working day(s) ({excluded_days} weekend/holiday day(s) excluded)")
+                    else:
+                        st.info(f"📅 Selected {business_days_count} working day(s)")
 
                     # Warn if exceeding balance
                     new_scheduled = scheduled_days + len(date_range)
                     if new_scheduled > leave_balance:
-                        st.warning(f"⚠️ Warning: Adding {len(date_range)} days will exceed leave balance by {new_scheduled - leave_balance} day(s)")
+                        st.warning(f"⚠️ Warning: Adding {len(date_range)} working days will exceed leave balance by {new_scheduled - leave_balance} day(s)")
 
             col_a, col_b = st.columns(2)
             with col_a:
@@ -1251,7 +1389,7 @@ elif page == "Schedule Annual Leave":
                             if len(date_range) == 1:
                                 st.success(f"✅ Annual Leave day added for {selected_employee_name} on {date_range[0]}")
                             else:
-                                st.success(f"✅ {len(date_range)} Annual Leave days added for {selected_employee_name}")
+                                st.success(f"✅ {len(date_range)} working day(s) of Annual Leave added for {selected_employee_name} (weekends/holidays excluded)")
                             st.rerun()
 
             with col_b:
@@ -1262,7 +1400,7 @@ elif page == "Schedule Annual Leave":
                         if len(date_range) == 1:
                             st.success(f"✅ Annual Leave day removed for {selected_employee_name} on {date_range[0]}")
                         else:
-                            st.success(f"✅ {len(date_range)} Annual Leave days removed for {selected_employee_name}")
+                            st.success(f"✅ {len(date_range)} working day(s) of Annual Leave removed for {selected_employee_name}")
                         st.rerun()
 
         with col2:
@@ -2123,6 +2261,88 @@ elif page == "Configure Roles":
     else:
         st.warning("⚠️ No roles configured yet.")
 
+# MANAGE PUBLIC HOLIDAYS PAGE
+elif page == "Manage Public Holidays":
+    st.title("📊 Business Analytics Team Scheduler - Manage Public Holidays")
+    st.markdown("---")
+
+    # Check if user is Admin
+    if st.session_state.user_role != "Admin":
+        st.error("❌ Access Denied: Only Admins can manage public holidays")
+        st.stop()
+
+    st.subheader("🎉 Add New Public Holiday")
+
+    col1, col2 = st.columns([2, 2])
+    with col1:
+        holiday_date = st.date_input(
+            "Holiday Date",
+            min_value=datetime(2020, 1, 1),
+            max_value=datetime(2030, 12, 31),
+            key="new_holiday_date"
+        )
+    with col2:
+        holiday_name = st.text_input(
+            "Holiday Name",
+            placeholder="e.g., Christmas Day, New Year's Day",
+            key="new_holiday_name"
+        )
+
+    col_add, col_space = st.columns([1, 3])
+    with col_add:
+        if st.button("➕ Add Holiday", type="primary", use_container_width=True):
+            if holiday_name.strip():
+                success = add_public_holiday(holiday_date, holiday_name.strip())
+                if success:
+                    st.success(f"✅ Added public holiday: {holiday_name} on {holiday_date.strftime('%d %b %Y')}")
+                    st.rerun()
+                else:
+                    st.error(f"❌ A holiday already exists on {holiday_date.strftime('%d %b %Y')}")
+            else:
+                st.warning("⚠️ Please enter a holiday name")
+
+    st.markdown("---")
+
+    # Display existing holidays
+    st.subheader("📅 Existing Public Holidays")
+
+    holidays_df = load_public_holidays()
+
+    if not holidays_df.empty:
+        # Sort by date
+        holidays_df = holidays_df.sort_values('date').reset_index(drop=True)
+
+        # Format the date for display
+        display_df = holidays_df.copy()
+        display_df['Display Date'] = display_df['date'].dt.strftime('%A, %d %B %Y')
+        display_df['Year'] = display_df['date'].dt.year
+
+        # Group by year
+        years = sorted(display_df['Year'].unique(), reverse=True)
+
+        for year in years:
+            st.markdown(f"### 📆 {year}")
+            year_holidays = display_df[display_df['Year'] == year].copy()
+
+            for idx, row in year_holidays.iterrows():
+                col1, col2, col3 = st.columns([3, 2, 1])
+                with col1:
+                    st.write(f"**{row['name']}**")
+                with col2:
+                    st.write(row['Display Date'])
+                with col3:
+                    if st.button("🗑️ Remove", key=f"remove_holiday_{row['date'].strftime('%Y%m%d')}"):
+                        remove_public_holiday(row['date'])
+                        st.success(f"✅ Removed {row['name']}")
+                        st.rerun()
+
+            st.markdown("---")
+
+        # Summary
+        st.info(f"📊 Total public holidays configured: **{len(holidays_df)}**")
+    else:
+        st.info("📝 No public holidays configured yet. Add your first holiday above!")
+
 # BACKUP & EXPORT PAGE
 elif page == "Backup & Export":
     st.title("📊 Business Analytics Team Scheduler - Backup & Export")
@@ -2186,10 +2406,11 @@ elif page == "Backup & Export":
 
     st.markdown("---")
 
-    # Leave Balances Export
-    st.subheader("💰 Leave Balance Records")
-    col_balance = st.columns(1)[0]
+    # Leave Balances and Public Holidays Export
+    col_balance, col_holidays = st.columns(2)
+
     with col_balance:
+        st.subheader("💰 Leave Balance Records")
         if st.button("📥 Export Leave Balances", use_container_width=True, key="export_balances"):
             df_balances = load_leave_balances()
             csv_balances = df_balances.to_csv(index=False)
@@ -2201,6 +2422,20 @@ elif page == "Backup & Export":
                 key="download_balances"
             )
             st.success(f"✅ Leave balances ready for download ({len(df_balances)} records)")
+
+    with col_holidays:
+        st.subheader("🎉 Public Holidays")
+        if st.button("📥 Export Public Holidays", use_container_width=True, key="export_holidays"):
+            df_holidays = load_public_holidays()
+            csv_holidays = df_holidays.to_csv(index=False)
+            st.download_button(
+                label="⬇️ Download Public_Holidays.csv",
+                data=csv_holidays,
+                file_name=f"Public_Holidays_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_holidays"
+            )
+            st.success(f"✅ Public holidays ready for download ({len(df_holidays)} records)")
 
     st.markdown("---")
 
@@ -2215,6 +2450,7 @@ elif page == "Backup & Export":
             df_al = load_annual_leave_records()
             df_seminar = load_seminar_records()
             df_balances = load_leave_balances()
+            df_holidays = load_public_holidays()
             employees = load_employees()
 
             # Create a summary
@@ -2228,6 +2464,7 @@ Total Records:
 - Annual Leave Records: {len(df_al)}
 - Seminar Records: {len(df_seminar)}
 - Leave Balances: {len(df_balances)}
+- Public Holidays: {len(df_holidays)}
 - Total Employees: {len(employees)}
 
 Files included in this backup:
@@ -2235,7 +2472,8 @@ Files included in this backup:
 2. Leave_Records.csv
 3. Seminar_Records.csv
 4. Leave_Balances.csv
-5. Backup_Summary.txt
+5. Public_Holidays.csv
+6. Backup_Summary.txt
 """
 
             # Prepare multiple files as a formatted text
@@ -2251,6 +2489,9 @@ Files included in this backup:
 
 === LEAVE BALANCES ===
 {df_balances.to_csv(index=False)}
+
+=== PUBLIC HOLIDAYS ===
+{df_holidays.to_csv(index=False)}
 
 === BACKUP SUMMARY ===
 {summary_text}
@@ -2290,6 +2531,8 @@ Files included in this backup:
         st.warning("⚠️ Restoring will overwrite existing data. Make sure you have a recent backup!")
 
         col_restore1, col_restore2 = st.columns(2)
+        col_restore3, col_restore4 = st.columns(2)
+        col_restore5 = st.columns(1)[0]
 
         # WFH Records Restore
         with col_restore1:
@@ -2327,6 +2570,8 @@ Files included in this backup:
 
         col_restore3, col_restore4 = st.columns(2)
 
+        st.markdown("---")
+
         # Seminar Records Restore
         with col_restore3:
             st.write("**Restore Seminar Records**")
@@ -2360,6 +2605,25 @@ Files included in this backup:
                         st.rerun()
                     except Exception as e:
                         st.error(f"❌ Error restoring Leave Balances: {e}")
+
+        st.markdown("---")
+
+        # Public Holidays Restore
+        with col_restore5:
+            st.write("**Restore Public Holidays**")
+            holidays_file = st.file_uploader("Upload Public Holidays CSV", type=["csv"], key="restore_holidays")
+            if holidays_file is not None:
+                if st.button("🔄 Restore Public Holidays", type="primary", use_container_width=True, key="restore_holidays_btn"):
+                    try:
+                        df_holidays_restore = pd.read_csv(holidays_file)
+                        save_public_holidays(df_holidays_restore)
+                        st.success(f"✅ Successfully restored {len(df_holidays_restore)} Public Holiday records!")
+                        st.info("The page will refresh to load the restored data.")
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Error restoring Public Holidays: {e}")
 
     with restore_tab2:
         st.write("**Bulk Restore All Data**")
@@ -2423,6 +2687,16 @@ Files included in this backup:
                                     save_leave_balances(df_balances)
                                     st.success(f"✅ Restored {len(df_balances)} Leave Balance records")
                                     restored_count += len(df_balances)
+
+                        elif 'PUBLIC HOLIDAYS' in section_title:
+                            csv_data = '\n'.join(lines[1:])
+                            if csv_data.strip():
+                                from io import StringIO
+                                df_holidays = pd.read_csv(StringIO(csv_data))
+                                if not df_holidays.empty:
+                                    save_public_holidays(df_holidays)
+                                    st.success(f"✅ Restored {len(df_holidays)} Public Holiday records")
+                                    restored_count += len(df_holidays)
 
                     st.success(f"✅ Successfully restored all data! Total records restored: {restored_count}")
                     st.info("The page will refresh to load the restored data.")
